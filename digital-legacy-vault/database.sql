@@ -1,27 +1,60 @@
-CREATE DATABASE digital_legacy;
+CREATE DATABASE IF NOT EXISTS digital_legacy;
 USE digital_legacy;
 
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
   id INT AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(100),
   email VARCHAR(100) UNIQUE,
   password VARCHAR(255),
+  last_check_in TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  check_in_frequency_days INT DEFAULT 30,
+  grace_period_days INT DEFAULT 7,
+  status VARCHAR(30) DEFAULT 'active',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE vaults (
+CREATE TABLE IF NOT EXISTS vaults (
   id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT,
-  title VARCHAR(100),
+  title VARCHAR(150),
+  category VARCHAR(50) DEFAULT 'Credentials',
   secret TEXT,
+  iv VARCHAR(64) DEFAULT '',
+  tag VARCHAR(64) DEFAULT '',
+  notes TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (user_id) REFERENCES users(id)
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
-CREATE TABLE nominees (
+CREATE TABLE IF NOT EXISTS nominees (
   id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT,
+  name VARCHAR(100),
   email VARCHAR(100),
+  phone VARCHAR(30) DEFAULT '',
   relation VARCHAR(50),
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  claim_token VARCHAR(64) UNIQUE,
+  status VARCHAR(30) DEFAULT 'pending',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS vault_nominee_access (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  vault_id INT NOT NULL,
+  nominee_id INT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (vault_id) REFERENCES vaults(id) ON DELETE CASCADE,
+  FOREIGN KEY (nominee_id) REFERENCES nominees(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT,
+  action VARCHAR(50),
+  details TEXT,
+  ip_address VARCHAR(45),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
