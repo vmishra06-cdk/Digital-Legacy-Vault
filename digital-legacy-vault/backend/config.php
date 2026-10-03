@@ -5,13 +5,16 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-define("DB_HOST", "localhost");
-define("DB_USER", "root");
-define("DB_PASS", "root");
-define("DB_NAME", "digital_legacy");
+// Database configuration supporting Railway, Docker, and local development
+define("DB_HOST", getenv("MYSQLHOST") ?: getenv("DB_HOST") ?: "127.0.0.1");
+define("DB_USER", getenv("MYSQLUSER") ?: getenv("DB_USER") ?: "root");
+define("DB_PASS", getenv("MYSQLPASSWORD") ?: getenv("MYSQL_ROOT_PASSWORD") ?: getenv("DB_PASS") ?: "root");
+define("DB_NAME", getenv("MYSQLDATABASE") ?: getenv("DB_NAME") ?: "digital_legacy");
+define("DB_PORT", (int)(getenv("MYSQLPORT") ?: getenv("DB_PORT") ?: 3306));
 
 // Master application key for vault encryption (in production, loaded from environment)
-define("VAULT_MASTER_KEY", hash('sha256', 'digital-legacy-vault-master-secret-key-2026', true));
+$masterSecret = getenv("VAULT_MASTER_KEY") ?: 'digital-legacy-vault-master-secret-key-2026';
+define("VAULT_MASTER_KEY", hash('sha256', $masterSecret, true));
 
 // CSRF helper
 if (empty($_SESSION['csrf_token'])) {
