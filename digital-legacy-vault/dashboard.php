@@ -49,6 +49,31 @@ $aStmt->bind_param("i", $uid);
 $aStmt->execute();
 $auditLogs = $aStmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
+// 2FA Setup state
+$twoFactorEnabled = !empty($user['two_factor_enabled']);
+$totpSetupSecret = '';
+$totpQrUrl = '';
+if (!$twoFactorEnabled) {
+    if (empty($_SESSION['totp_setup_secret'])) {
+        $_SESSION['totp_setup_secret'] = generate_totp_secret();
+    }
+    $totpSetupSecret = $_SESSION['totp_setup_secret'];
+    $totpQrUrl = get_totp_qr_url($user['email'], $totpSetupSecret, 'Digital Legacy Vault');
+}
+
+// Flash recovery codes (displayed immediately after generating)
+$justGeneratedRecoveryCodes = $_SESSION['new_recovery_codes'] ?? null;
+unset($_SESSION['new_recovery_codes']);
+
+// Remaining emergency recovery codes
+$remainingRecoveryCodes = [];
+if (!empty($user['two_factor_recovery_codes'])) {
+    $decodedCodes = json_decode($user['two_factor_recovery_codes'], true);
+    if (is_array($decodedCodes)) {
+        $remainingRecoveryCodes = $decodedCodes;
+    }
+}
+
 $activeTab = $_GET['tab'] ?? 'vault';
 $successMsg = $_GET['success'] ?? '';
 $errorMsg = $_GET['error'] ?? '';
@@ -132,6 +157,9 @@ $warningMsg = $_GET['warning'] ?? '';
           </a>
           <a href="?tab=pulse" class="tab-link <?php echo ($activeTab === 'pulse') ? 'active' : ''; ?>">
             <span>Dead Man Switch</span>
+          </a>
+          <a href="?tab=security" class="tab-link <?php echo ($activeTab === 'security') ? 'active' : ''; ?>">
+            <span>Security & 2FA</span>
           </a>
           <a href="?tab=logs" class="tab-link <?php echo ($activeTab === 'logs') ? 'active' : ''; ?>">
             <span>Security Logs</span>
@@ -466,6 +494,182 @@ $warningMsg = $_GET['warning'] ?? '';
           <?php endif; ?>
         </div>
 
+        <!-- TAB: TWO-FACTOR AUTHENTICATION & SECURITY -->
+        <div id="tab-security" class="tab-pane <?php echo ($activeTab === 'security') ? 'active' : ''; ?>">
+          <div class="section-header">
+            <div>
+              <h2>Two-Factor Authentication (2FA / TOTP)</h2>
+              <p style="color: var(--text-muted); font-size: 0.9rem;">
+                Eliminate single points of failure with RFC 6238 Time-Based One-Time Passwords (TOTP) and offline emergency recovery keys.
+              </p>
+            </div>
+            <div>
+              <?php if ($twoFactorEnabled): ?>
+                <span class="status-badge success" style="margin-top: 0; background: rgba(16, 185, 129, 0.15); color: var(--cyber-green); border: 1px solid rgba(16, 185, 129, 0.4);">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                  2FA Active & Enforced
+                </span>
+              <?php else: ?>
+                <span class="status-badge warning" style="margin-top: 0; background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3);">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                  2FA Not Configured
+                </span>
+              <?php endif; ?>
+            </div>
+          </div>
+
+          <?php if (!empty($justGeneratedRecoveryCodes)): ?>
+            <!-- Newly Generated Recovery Codes Banner -->
+            <div class="glass-card" style="padding: 24px; margin-bottom: 24px; border: 1px solid var(--cyber-green); background: rgba(16, 185, 129, 0.08);">
+              <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 12px;">
+                <h3 style="color: var(--cyber-green); margin: 0; display: flex; align-items: center; gap: 8px;">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                  Emergency Recovery Backup Codes
+                </h3>
+                <div style="display: flex; gap: 10px;">
+                  <button type="button" class="cyber-btn secondary btn-sm" onclick="copyRecoveryCodes()">
+                    Copy All Codes
+                  </button>
+                  <button type="button" class="cyber-btn secondary btn-sm" onclick="downloadRecoveryCodes()">
+                    Download .txt
+                  </button>
+                </div>
+              </div>
+              <p style="font-size: 0.9rem; color: var(--text-main); margin-bottom: 16px;">
+                <strong>CRITICAL:</strong> Store these 8 single-use emergency recovery codes safely offline (in a password manager or physical safe). Each code can be used exactly once to log in if you lose access to your authenticator app. <em>These codes will NOT be displayed again!</em>
+              </p>
+              <div id="recoveryCodesList" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; background: rgba(0, 0, 0, 0.4); padding: 16px; border-radius: 8px; border: 1px dashed rgba(16, 185, 129, 0.4);">
+                <?php foreach ($justGeneratedRecoveryCodes as $rcode): ?>
+                  <div style="font-family: monospace; font-size: 1.05rem; font-weight: 700; letter-spacing: 2px; color: var(--cyber-green); text-align: center; background: rgba(255,255,255,0.04); padding: 8px 10px; border-radius: 6px;">
+                    <?php echo htmlspecialchars($rcode); ?>
+                  </div>
+                <?php endforeach; ?>
+              </div>
+            </div>
+          <?php endif; ?>
+
+          <?php if (!$twoFactorEnabled): ?>
+            <!-- 2FA Setup Flow -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px;">
+              <!-- Step 1: Scan QR Code -->
+              <div class="glass-card" style="padding: 28px;">
+                <h3 style="margin-bottom: 12px; display: flex; align-items: center; gap: 10px;">
+                  <span style="background: var(--cyber-blue); color: #000; width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0.85rem; font-weight: bold;">1</span>
+                  Scan Setup QR Code
+                </h3>
+                <p style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 20px;">
+                  Open <strong>Google Authenticator</strong>, <strong>Authy</strong>, <strong>1Password</strong>, or <strong>Microsoft Authenticator</strong> on your mobile device and scan this QR code.
+                </p>
+
+                <div style="text-align: center; margin-bottom: 20px;">
+                  <img src="<?php echo htmlspecialchars($totpQrUrl); ?>" alt="2FA Setup QR Code" style="background: #ffffff; padding: 12px; border-radius: 12px; box-shadow: 0 4px 25px rgba(0,0,0,0.5); width: 200px; height: 200px; display: inline-block;">
+                </div>
+
+                <div style="background: rgba(0,0,0,0.3); padding: 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08);">
+                  <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 6px;">Can't scan the QR code? Enter this secret key manually:</div>
+                  <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                    <code id="manualTotpSecret" style="font-family: monospace; font-size: 0.95rem; letter-spacing: 2px; color: var(--cyber-blue); word-break: break-all;">
+                      <?php echo htmlspecialchars(chunk_split($totpSetupSecret, 4, ' ')); ?>
+                    </code>
+                    <button type="button" class="cyber-btn secondary btn-sm" onclick="navigator.clipboard.writeText('<?php echo htmlspecialchars($totpSetupSecret); ?>'); this.innerText='Copied!'; setTimeout(()=>this.innerText='Copy', 2000);">
+                      Copy
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Step 2: Confirm 6-Digit Code -->
+              <div class="glass-card" style="padding: 28px;">
+                <h3 style="margin-bottom: 12px; display: flex; align-items: center; gap: 10px;">
+                  <span style="background: var(--cyber-blue); color: #000; width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0.85rem; font-weight: bold;">2</span>
+                  Verify & Activate 2FA
+                </h3>
+                <p style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 24px;">
+                  Enter the 6-digit verification code generated by your authenticator app to verify time synchronization and activate two-factor protection.
+                </p>
+
+                <form action="backend/security.php" method="POST">
+                  <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>">
+                  <input type="hidden" name="totp_secret" value="<?php echo htmlspecialchars($totpSetupSecret); ?>">
+
+                  <div class="form-group">
+                    <label for="totpVerifyInput">6-Digit Authenticator Code</label>
+                    <input type="text" id="totpVerifyInput" name="totp_code" maxlength="6" pattern="[0-9]{6}" required placeholder="000000" autocomplete="one-time-code" style="text-align: center; letter-spacing: 8px; font-size: 1.4rem; font-family: monospace;">
+                    <small style="color: var(--text-muted); margin-top: 6px; display: block;">Codes refresh automatically every 30 seconds.</small>
+                  </div>
+
+                  <button type="submit" name="enable_2fa" class="cyber-btn primary-glow" style="width: 100%; justify-content: center; margin-top: 18px;">
+                    Verify Code and Enable 2FA
+                  </button>
+                </form>
+              </div>
+            </div>
+
+          <?php else: ?>
+            <!-- 2FA Active Management -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px;">
+              <!-- 2FA Active Status Card -->
+              <div class="glass-card" style="padding: 28px;">
+                <h3 style="margin-bottom: 14px; display: flex; align-items: center; gap: 8px; color: var(--cyber-green);">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                  Two-Factor Protection Active
+                </h3>
+                <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 20px;">
+                  Your vault is fortified with Time-Based One-Time Passwords (RFC 6238). Unauthorized logins are blocked even if your master password is leaked or compromised.
+                </p>
+
+                <div style="background: rgba(0,0,0,0.3); padding: 18px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08); margin-bottom: 20px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 0.9rem; color: var(--text-muted);">Emergency Recovery Codes Remaining:</span>
+                    <strong style="color: var(--cyber-blue); font-size: 1.1rem; font-family: monospace;">
+                      <?php echo count($remainingRecoveryCodes); ?> / 8
+                    </strong>
+                  </div>
+                  <?php if (count($remainingRecoveryCodes) <= 2): ?>
+                    <p style="color: var(--cyber-amber); font-size: 0.82rem; margin-top: 8px;">
+                      Warning: Low recovery codes count. Regenerate a new batch below before exhausting all keys.
+                    </p>
+                  <?php endif; ?>
+                </div>
+
+                <!-- Form: Regenerate Recovery Codes -->
+                <form action="backend/security.php" method="POST" onsubmit="return confirm('Regenerating codes will immediately invalidate all previous recovery codes. Continue?');">
+                  <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>">
+                  <h4 style="font-size: 0.95rem; margin-bottom: 10px;">Regenerate Emergency Recovery Codes</h4>
+                  <div class="form-group" style="margin-bottom: 12px;">
+                    <input type="password" name="password" required placeholder="Enter Master Password to Confirm" autocomplete="current-password">
+                  </div>
+                  <button type="submit" name="regenerate_recovery_codes" class="cyber-btn secondary" style="width: 100%; justify-content: center;">
+                    Generate 8 Fresh Recovery Codes
+                  </button>
+                </form>
+              </div>
+
+              <!-- Disable 2FA Card -->
+              <div class="glass-card" style="padding: 28px; border-color: rgba(239, 68, 68, 0.3);">
+                <h3 style="margin-bottom: 14px; color: var(--cyber-red); display: flex; align-items: center; gap: 8px;">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                  Deactivate Two-Factor Authentication
+                </h3>
+                <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 20px;">
+                  Disabling 2FA reduces vault security to single-password protection. All stored 2FA secrets and emergency recovery codes will be erased immediately.
+                </p>
+
+                <form action="backend/security.php" method="POST" onsubmit="return confirm('Are you certain you wish to disable Two-Factor Authentication? Your vault will be vulnerable to single password compromise.');">
+                  <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>">
+                  <div class="form-group" style="margin-bottom: 14px;">
+                    <label for="disable2faPass">Confirm Master Password</label>
+                    <input type="password" id="disable2faPass" name="password" required placeholder="••••••••••••" autocomplete="current-password">
+                  </div>
+                  <button type="submit" name="disable_2fa" class="cyber-btn danger" style="width: 100%; justify-content: center;">
+                    Disable Two-Factor Authentication
+                  </button>
+                </form>
+              </div>
+            </div>
+          <?php endif; ?>
+        </div>
+
         <!-- TAB 5: BACKUP & EXPORT -->
         <div id="tab-backup" class="tab-pane <?php echo ($activeTab === 'backup') ? 'active' : ''; ?>">
           <div class="section-header">
@@ -793,6 +997,37 @@ $warningMsg = $_GET['warning'] ?? '';
           confirmNewPwd.focus();
         }
       });
+    }
+
+    // 2FA Recovery Codes Actions
+    function copyRecoveryCodes() {
+      const container = document.getElementById('recoveryCodesList');
+      if (!container) return;
+      const codes = Array.from(container.children).map(el => el.innerText.trim()).join('\n');
+      navigator.clipboard.writeText(codes).then(() => {
+        alert('Emergency recovery codes copied to clipboard.');
+      }).catch(() => {
+        prompt('Copy your recovery codes below:', codes);
+      });
+    }
+
+    function downloadRecoveryCodes() {
+      const container = document.getElementById('recoveryCodesList');
+      if (!container) return;
+      const codes = Array.from(container.children).map(el => el.innerText.trim()).join('\r\n');
+      const text = "DIGITAL LEGACY VAULT - EMERGENCY RECOVERY BACKUP CODES\r\n"
+                 + "Generated on: " + new Date().toISOString() + "\r\n"
+                 + "Notice: Each code can only be used once.\r\n"
+                 + "--------------------------------------------------------\r\n\r\n"
+                 + codes + "\r\n\r\n"
+                 + "Keep this document in an encrypted or physical offline safe.";
+      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'digital-legacy-vault-recovery-codes.txt';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     }
   </script>
 </body>
