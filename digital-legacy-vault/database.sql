@@ -7,6 +7,12 @@ CREATE TABLE IF NOT EXISTS users (
   check_in_frequency_days INT DEFAULT 30,
   grace_period_days INT DEFAULT 7,
   status VARCHAR(30) DEFAULT 'active',
+  two_factor_secret VARCHAR(64) DEFAULT '',
+  two_factor_enabled TINYINT(1) DEFAULT 0,
+  duress_password VARCHAR(255) DEFAULT '',
+  consensus_threshold INT DEFAULT 1,
+  last_backup_export TIMESTAMP NULL DEFAULT NULL,
+  two_factor_recovery_codes TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -36,6 +42,8 @@ CREATE TABLE IF NOT EXISTS nominees (
   relation VARCHAR(50),
   claim_token VARCHAR(64) UNIQUE,
   status VARCHAR(30) DEFAULT 'pending',
+  has_approved_release TINYINT(1) DEFAULT 0,
+  approval_timestamp TIMESTAMP NULL DEFAULT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
@@ -47,6 +55,31 @@ CREATE TABLE IF NOT EXISTS vault_nominee_access (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (vault_id) REFERENCES vaults(id) ON DELETE CASCADE,
   FOREIGN KEY (nominee_id) REFERENCES nominees(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS capsules (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  recipient_name VARCHAR(100),
+  recipient_email VARCHAR(100),
+  title VARCHAR(150),
+  message TEXT,
+  iv VARCHAR(64) DEFAULT '',
+  tag VARCHAR(64) DEFAULT '',
+  unlock_date DATE NOT NULL,
+  access_token VARCHAR(64) UNIQUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS dispatched_notifications (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  recipient_email VARCHAR(100),
+  notification_type VARCHAR(50),
+  subject VARCHAR(200),
+  sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS audit_logs (
