@@ -8,20 +8,23 @@ Digital Legacy Vault is an automated cryptographic fail-safe platform for digita
 
 ## Key Features
 
-- **Authenticated Cryptography**: Military-grade AES-256-GCM encryption with per-record Initialization Vectors (IV) and authentication tags.
-- **Dead Man's Switch Protocol**: Automated heartbeat monitor with configurable check-in intervals and grace periods.
+- **Client-Side Zero-Knowledge Encryption**: Native Web Crypto API (`window.crypto.subtle`) derives AES-256-GCM encryption keys directly from the master password using PBKDF2 (100,000 iterations). Plaintext secrets and attached documents are encrypted locally in the browser before transmission; the server and database never hold or view plaintext in memory.
+- **Two-Factor Authentication (2FA / TOTP)**: Full RFC 6238 TOTP implementation compatible with Google Authenticator, Authy, and 1Password. Features dynamic setup QR codes, manual secret entry, and 8 single-use emergency recovery backup codes.
+- **Dead Man's Switch Protocol**: Automated heartbeat monitor with configurable check-in intervals, grace periods, and emergency simulation testing.
+- **Time-Locked Future Message Capsules**: Encrypted milestone messages locked until specific future release dates for loved ones and descendants.
 - **Granular Beneficiary Delegation**: Map specific vault records or confidential files to specific trustees.
-- **Document & File Upload Pipeline**: Securely attach legal documents, wills, and certificates (up to 25MB).
-- **Independent Beneficiary Claim Portal**: Dedicated claim gateway using 48-character unguessable access tokens with conditional decryption.
+- **Document & File Upload Pipeline**: Securely attach legal documents, wills, and certificates (up to 25MB) with local client-side encryption.
+- **Independent Beneficiary Claim Portal**: Dedicated claim gateway using 48-character unguessable access tokens with in-browser client decryption.
 - **3D WebGL Holographic GUI**: Hardware-accelerated Three.js 3D vault core that visually responds to protocol health and system states.
 - **Immutable Security Audit Trail**: Comprehensive logging of authentications, record updates, check-ins, and external claim access attempts.
-- **Air-Gapped Data Backup**: One-click JSON export for offline preservation.
+- **Air-Gapped Data Backup**: One-click Zero-Knowledge JSON archive export decrypted locally in the browser.
 
 ---
 
 ## Technology Stack
 
-- **Backend**: PHP 8.1+ (Engineered with strict session controls and anti-CSRF token verification)
+- **Cryptographic Engine**: Browser Web Crypto API (`window.crypto.subtle`), AES-256-GCM, PBKDF2-HMAC-SHA256, RFC 6238 TOTP
+- **Backend**: PHP 8.1+ (Strict session isolation, anti-CSRF token verification, and prepared statements)
 - **Database**: MySQL 5.7+ / MariaDB
 - **Frontend**: HTML5, Modern CSS (Glassmorphism), Vanilla JavaScript
 - **3D Visualization**: Three.js WebGL Engine
