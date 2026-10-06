@@ -84,6 +84,7 @@ $finfo = new finfo(FILEINFO_MIME_TYPE);
 $mimeType = $finfo->file($fullPath) ?: "application/octet-stream";
 
 header('Content-Description: File Transfer');
+header('X-Client-Encrypted: ' . (!empty($vault['is_client_encrypted']) ? '1' : '0'));
 header('Content-Type: ' . $mimeType);
 header('Content-Disposition: attachment; filename="' . addslashes($originalName) . '"');
 header('Expires: 0');

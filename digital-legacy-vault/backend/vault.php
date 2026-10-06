@@ -58,7 +58,24 @@ if (isset($_POST['save_vault'])) {
         exit;
     }
 
-    $enc = encrypt_vault_secret($secret);
+    $isClientEncrypted = !empty($_POST['is_client_encrypted']) ? 1 : 0;
+    $clientIv = trim($_POST['client_iv'] ?? '');
+    $clientTag = trim($_POST['client_tag'] ?? '');
+
+    if ($isClientEncrypted && !empty($clientIv) && !empty($clientTag)) {
+        // Zero-Knowledge Architecture: Browser already encrypted via Web Crypto API
+        $ciphertext = $secret;
+        $iv = $clientIv;
+        $tag = $clientTag;
+        $isClient = 1;
+    } else {
+        // Fallback server-side encryption
+        $enc = encrypt_vault_secret($secret);
+        $ciphertext = $enc['ciphertext'];
+        $iv = $enc['iv'];
+        $tag = $enc['tag'];
+        $isClient = 0;
+    }
 
     // Process file upload
     $filePath = '';
@@ -77,8 +94,8 @@ if (isset($_POST['save_vault'])) {
         }
     }
 
-    $stmt = $conn->prepare("INSERT INTO vaults (user_id, title, category, secret, iv, tag, notes, file_path, file_name, file_size) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-    $stmt->bind_param("issssssssi", $uid, $title, $category, $enc['ciphertext'], $enc['iv'], $enc['tag'], $notes, $filePath, $fileName, $fileSize);
+    $stmt = $conn->prepare("INSERT INTO vaults (user_id, title, category, secret, iv, tag, is_client_encrypted, notes, file_path, file_name, file_size) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    $stmt->bind_param("isssssisssi", $uid, $title, $category, $ciphertext, $iv, $tag, $isClient, $notes, $filePath, $fileName, $fileSize);
 
     if ($stmt->execute()) {
         $vaultId = $stmt->insert_id;
@@ -93,7 +110,8 @@ if (isset($_POST['save_vault'])) {
             }
         }
 
-        log_audit($conn, $uid, 'VAULT_CREATED', "Stored new encrypted item: {$title} ({$category})");
+        $logMsg = $isClient ? "Stored new Zero-Knowledge encrypted item: {$title} ({$category})" : "Stored new encrypted item: {$title} ({$category})";
+        log_audit($conn, $uid, 'VAULT_CREATED', $logMsg);
         header("Location: ../dashboard.php?tab=vault&success=" . urlencode("Record securely encrypted with AES-256-GCM."));
         exit;
     } else {
@@ -110,6 +128,9 @@ if (isset($_POST['update_vault'])) {
     $secret = $_POST['secret'] ?? '';
     $notes = trim($_POST['notes'] ?? '');
     $nomineeIds = $_POST['nominee_ids'] ?? [];
+    $isClientEncrypted = !empty($_POST['is_client_encrypted']) ? 1 : 0;
+    $clientIv = trim($_POST['client_iv'] ?? '');
+    $clientTag = trim($_POST['client_tag'] ?? '');
 
     // Verify ownership
     $chk = $conn->prepare("SELECT id, file_path FROM vaults WHERE id = ? AND user_id = ?");
@@ -144,13 +165,25 @@ if (isset($_POST['update_vault'])) {
     }
 
     if (!empty($secret)) {
-        $enc = encrypt_vault_secret($secret);
-        if ($fileName !== null) {
-            $stmt = $conn->prepare("UPDATE vaults SET title = ?, category = ?, secret = ?, iv = ?, tag = ?, notes = ?, file_path = ?, file_name = ?, file_size = ? WHERE id = ? AND user_id = ?");
-            $stmt->bind_param("ssssssssiii", $title, $category, $enc['ciphertext'], $enc['iv'], $enc['tag'], $notes, $filePath, $fileName, $fileSize, $vaultId, $uid);
+        if ($isClientEncrypted && !empty($clientIv) && !empty($clientTag)) {
+            $ciphertext = $secret;
+            $iv = $clientIv;
+            $tag = $clientTag;
+            $isClient = 1;
         } else {
-            $stmt = $conn->prepare("UPDATE vaults SET title = ?, category = ?, secret = ?, iv = ?, tag = ?, notes = ? WHERE id = ? AND user_id = ?");
-            $stmt->bind_param("ssssssii", $title, $category, $enc['ciphertext'], $enc['iv'], $enc['tag'], $notes, $vaultId, $uid);
+            $enc = encrypt_vault_secret($secret);
+            $ciphertext = $enc['ciphertext'];
+            $iv = $enc['iv'];
+            $tag = $enc['tag'];
+            $isClient = 0;
+        }
+
+        if ($fileName !== null) {
+            $stmt = $conn->prepare("UPDATE vaults SET title = ?, category = ?, secret = ?, iv = ?, tag = ?, is_client_encrypted = ?, notes = ?, file_path = ?, file_name = ?, file_size = ? WHERE id = ? AND user_id = ?");
+            $stmt->bind_param("ssssssisssii", $title, $category, $ciphertext, $iv, $tag, $isClient, $notes, $filePath, $fileName, $fileSize, $vaultId, $uid);
+        } else {
+            $stmt = $conn->prepare("UPDATE vaults SET title = ?, category = ?, secret = ?, iv = ?, tag = ?, is_client_encrypted = ?, notes = ? WHERE id = ? AND user_id = ?");
+            $stmt->bind_param("ssssssisii", $title, $category, $ciphertext, $iv, $tag, $isClient, $notes, $vaultId, $uid);
         }
     } else {
         if ($fileName !== null) {
