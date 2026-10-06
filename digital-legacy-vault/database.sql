@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS users (
   consensus_threshold INT DEFAULT 1,
   last_backup_export TIMESTAMP NULL DEFAULT NULL,
   two_factor_recovery_codes TEXT,
+  client_salt VARCHAR(64) DEFAULT '',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -24,6 +25,7 @@ CREATE TABLE IF NOT EXISTS vaults (
   secret TEXT,
   iv VARCHAR(64) DEFAULT '',
   tag VARCHAR(64) DEFAULT '',
+  is_client_encrypted TINYINT(1) DEFAULT 1,
   notes TEXT,
   file_path VARCHAR(255) DEFAULT '',
   file_name VARCHAR(255) DEFAULT '',
@@ -43,6 +45,7 @@ CREATE TABLE IF NOT EXISTS nominees (
   claim_token VARCHAR(64) UNIQUE,
   status VARCHAR(30) DEFAULT 'pending',
   has_approved_release TINYINT(1) DEFAULT 0,
+  encrypted_vault_key TEXT DEFAULT NULL,
   approval_timestamp TIMESTAMP NULL DEFAULT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
