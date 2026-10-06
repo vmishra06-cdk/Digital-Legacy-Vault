@@ -39,7 +39,7 @@ $success = $_GET['success'] ?? '';
         <div class="alert alert-success"><?php echo htmlspecialchars($success); ?></div>
       <?php endif; ?>
 
-      <form action="backend/auth.php" method="POST">
+      <form action="backend/auth.php" method="POST" id="loginForm">
         <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>">
 
         <div class="form-group">
@@ -52,7 +52,7 @@ $success = $_GET['success'] ?? '';
           <input type="password" id="loginPassword" name="password" required placeholder="••••••••••••" autocomplete="current-password">
         </div>
 
-        <button type="submit" name="login" class="cyber-btn primary-glow" style="width: 100%; justify-content: center; margin-top: 10px;">
+        <button type="submit" name="login" id="loginBtn" class="cyber-btn primary-glow" style="width: 100%; justify-content: center; margin-top: 10px;">
           Unlock Vault
         </button>
       </form>
@@ -64,7 +64,23 @@ $success = $_GET['success'] ?? '';
     </div>
   </div>
 
+  <script src="assets/js/crypto-zk.js"></script>
   <script src="assets/js/bg3d.js"></script>
   <script src="assets/js/vault3d.js"></script>
+  <script>
+    const form = document.getElementById('loginForm');
+    form.addEventListener('submit', async function(e) {
+      const email = document.getElementById('loginEmail').value.trim();
+      const password = document.getElementById('loginPassword').value;
+      if (email && password && window.DLVCrypto && window.DLVCrypto.isSupported()) {
+        try {
+          const key = await window.DLVCrypto.deriveKeyFromPassword(password, email);
+          await window.DLVCrypto.saveKeyToSession(email, key);
+        } catch (err) {
+          console.warn('Client key derivation notice:', err);
+        }
+      }
+    });
+  </script>
 </body>
 </html>

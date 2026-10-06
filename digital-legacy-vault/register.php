@@ -99,13 +99,25 @@ $error = $_GET['error'] ?? '';
     pwd.addEventListener('input', checkPasswordMatch);
     confirmPwd.addEventListener('input', checkPasswordMatch);
 
-    form.addEventListener('submit', (e) => {
+    form.addEventListener('submit', async (e) => {
       if (pwd.value !== confirmPwd.value) {
         e.preventDefault();
         checkPasswordMatch();
         confirmPwd.focus();
+        return;
+      }
+      const email = document.getElementById('regEmail').value.trim();
+      const password = pwd.value;
+      if (email && password && window.DLVCrypto && window.DLVCrypto.isSupported()) {
+        try {
+          const key = await window.DLVCrypto.deriveKeyFromPassword(password, email);
+          await window.DLVCrypto.saveKeyToSession(email, key);
+        } catch (err) {
+          console.warn('Client key derivation notice:', err);
+        }
       }
     });
   </script>
+  <script src="assets/js/crypto-zk.js"></script>
 </body>
 </html>
