@@ -139,18 +139,34 @@ if (!empty($token)) {
             <p class="empty-state" style="text-align: center; color: var(--text-muted); padding: 40px;">No specific records were designated under this key.</p>
           <?php else: ?>
             <?php foreach($items as $item): ?>
-              <?php $secret = decrypt_vault_secret($item['secret'], $item['iv'] ?? '', $item['tag'] ?? ''); ?>
+              <?php 
+                $isClient = !empty($item['is_client_encrypted']);
+                $serverSecret = (!$isClient) ? decrypt_vault_secret($item['secret'], $item['iv'] ?? '', $item['tag'] ?? '') : '';
+              ?>
               <div class="legacy-item-card">
                 <div class="item-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                   <span class="category-tag">
                     <?php echo htmlspecialchars($item['category']); ?>
                   </span>
+                  <?php if ($isClient): ?>
+                    <span style="font-size: 0.75rem; color: var(--cyber-blue); border: 1px solid rgba(0, 240, 255, 0.3); padding: 2px 6px; border-radius: 4px;">Zero-Knowledge Encrypted</span>
+                  <?php endif; ?>
                   <h4><?php echo htmlspecialchars($item['title']); ?></h4>
                 </div>
                 
-                <div class="secret-box">
-                  <label style="font-size: 0.8rem; color: var(--text-muted); display: block; margin-bottom: 6px;">Decrypted Message / Credentials:</label>
-                  <pre class="secret-text"><?php echo htmlspecialchars($secret); ?></pre>
+                <div class="secret-box"
+                     id="claim-box-<?php echo $item['id']; ?>"
+                     data-ciphertext="<?php echo htmlspecialchars($item['secret']); ?>"
+                     data-iv="<?php echo htmlspecialchars($item['iv'] ?? ''); ?>"
+                     data-tag="<?php echo htmlspecialchars($item['tag'] ?? ''); ?>"
+                     data-is-client="<?php echo $isClient ? '1' : '0'; ?>">
+                  <label style="font-size: 0.8rem; color: var(--text-muted); display: block; margin-bottom: 6px;">Message / Credentials:</label>
+                  <pre class="secret-text" id="claim-text-<?php echo $item['id']; ?>"><?php echo htmlspecialchars($serverSecret ?: '•••••••••••••••• (Encrypted Client-Side)'); ?></pre>
+                  <?php if ($isClient): ?>
+                    <button type="button" class="cyber-btn secondary btn-sm" style="margin-top: 10px;" onclick="decryptClaimSecret(<?php echo $item['id']; ?>)">
+                      Decrypt Client-Side
+                    </button>
+                  <?php endif; ?>
                 </div>
 
                 <?php if(!empty($item['file_path'])): ?>
@@ -162,9 +178,15 @@ if (!empty($token)) {
                         <small style="color: var(--text-muted); margin-left: 6px;">(<?php echo round($item['file_size'] / 1024, 1); ?> KB)</small>
                       <?php endif; ?>
                     </div>
-                    <a href="backend/download.php?id=<?php echo $item['id']; ?>&token=<?php echo urlencode($token); ?>" class="cyber-btn primary-glow btn-sm">
-                      Download File
-                    </a>
+                    <?php if ($isClient): ?>
+                      <button type="button" class="cyber-btn primary-glow btn-sm" onclick="downloadClaimFile(<?php echo $item['id']; ?>, '<?php echo htmlspecialchars(addslashes($item['file_name'])); ?>', '<?php echo urlencode($token); ?>')">
+                        Decrypt & Download
+                      </button>
+                    <?php else: ?>
+                      <a href="backend/download.php?id=<?php echo $item['id']; ?>&token=<?php echo urlencode($token); ?>" class="cyber-btn primary-glow btn-sm">
+                        Download File
+                      </a>
+                    <?php endif; ?>
                   </div>
                 <?php endif; ?>
 
@@ -191,6 +213,57 @@ if (!empty($token)) {
     <?php endif; ?>
   </div>
 
+  <script src="assets/js/crypto-zk.js"></script>
   <script src="assets/js/bg3d.js"></script>
+  <script>
+    let beneficiaryKey = null;
+
+    async function promptBeneficiaryKey() {
+      if (beneficiaryKey) return beneficiaryKey;
+      const pwd = prompt("Enter the Vault Key or Master Password provided by the account owner:");
+      if (!pwd) return null;
+      const ownerEmail = "<?php echo htmlspecialchars($nominee['owner_email'] ?? ($nominee['email'] ?? 'legacy')); ?>";
+      beneficiaryKey = await window.DLVCrypto.deriveKeyFromPassword(pwd, ownerEmail);
+      return beneficiaryKey;
+    }
+
+    async function decryptClaimSecret(id) {
+      const box = document.getElementById('claim-box-' + id);
+      const textElem = document.getElementById('claim-text-' + id);
+      const cipher = box.getAttribute('data-ciphertext');
+      const iv = box.getAttribute('data-iv');
+      const tag = box.getAttribute('data-tag');
+
+      try {
+        const key = await promptBeneficiaryKey();
+        if (!key) return;
+        const dec = await window.DLVCrypto.decryptText(cipher, iv, tag, key);
+        textElem.innerText = dec;
+      } catch(err) {
+        alert("Decryption failed. Please verify the key: " + err.message);
+      }
+    }
+
+    async function downloadClaimFile(id, fileName, token) {
+      try {
+        const key = await promptBeneficiaryKey();
+        if (!key) return;
+        const resp = await fetch(`backend/download.php?id=${id}&token=${token}`);
+        if (!resp.ok) throw new Error('Download failed');
+        const buffer = await resp.arrayBuffer();
+        const decryptedBlob = await window.DLVCrypto.decryptFile(buffer, key);
+        const url = URL.createObjectURL(decryptedBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch(err) {
+        alert("File decryption failed: " + err.message);
+      }
+    }
+  </script>
 </body>
 </html>
