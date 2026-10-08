@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS users (
   name VARCHAR(100),
   email VARCHAR(100) UNIQUE,
   password VARCHAR(255),
+  password_entropy_score INT DEFAULT 65,
   last_check_in TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   check_in_frequency_days INT DEFAULT 30,
   grace_period_days INT DEFAULT 7,

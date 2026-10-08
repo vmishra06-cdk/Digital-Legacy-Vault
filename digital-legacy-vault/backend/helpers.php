@@ -189,65 +189,299 @@ function generate_recovery_codes($count = 8) {
 }
 
 /**
+ * Calculates Password Entropy in Bits using NIST combinatorial pool metrics
+ */
+function calculate_password_entropy($password) {
+    if (empty($password)) return 0;
+    $pool = 0;
+    if (preg_match('/[a-z]/', $password)) $pool += 26;
+    if (preg_match('/[A-Z]/', $password)) $pool += 26;
+    if (preg_match('/[0-9]/', $password)) $pool += 10;
+    if (preg_match('/[^a-zA-Z0-9]/', $password)) $pool += 33;
+    if ($pool === 0) return 0;
+    $length = strlen($password);
+    return (int)round($length * (log($pool) / log(2)));
+}
+
+/**
  * Calculates Vault Security Health Score (0 - 100%)
+ * 5 Security Pillars:
+ * 1. Master Password Entropy (20 pts)
+ * 2. Two-Factor Authentication TOTP (20 pts)
+ * 3. Beneficiary Coverage (20 pts)
+ * 4. Switch Protocol Freshness (20 pts)
+ * 5. Offline Cold Backup (20 pts)
  */
 function calculate_vault_health($user, $vaults, $nominees) {
     $score = 0;
+    $metrics = [];
     $recommendations = [];
+    $unassignedVaults = [];
 
-    // 1. Two-Factor Authentication (+25)
-    if (!empty($user['two_factor_enabled'])) {
-        $score += 25;
+    // 1. Master Password Entropy Check (Max: 20 pts)
+    $entropyBits = isset($user['password_entropy_score']) && $user['password_entropy_score'] > 0 
+        ? intval($user['password_entropy_score']) 
+        : 65;
+    $entropyScore = 0;
+    $entropyStatus = 'danger';
+    if ($entropyBits >= 65) {
+        $entropyScore = 20;
+        $entropyStatus = 'optimal';
+    } elseif ($entropyBits >= 50) {
+        $entropyScore = 15;
+        $entropyStatus = 'warning';
+    } elseif ($entropyBits >= 35) {
+        $entropyScore = 10;
+        $entropyStatus = 'warning';
     } else {
-        $recommendations[] = "Enable Two-Factor Authentication (2FA) to protect against credential stuffing.";
+        $entropyScore = 5;
+        $entropyStatus = 'danger';
+    }
+    $score += $entropyScore;
+    $metrics['entropy'] = [
+        'title' => 'Master Password Entropy',
+        'score' => $entropyScore,
+        'max' => 20,
+        'bits' => $entropyBits,
+        'status' => $entropyStatus,
+        'value' => "{$entropyBits} bits",
+        'description' => 'Evaluates cryptographic strength against dictionary and brute-force attacks.',
+        'action_url' => '?tab=security#change-pwd',
+        'action_label' => 'Strengthen Password'
+    ];
+    if ($entropyScore < 20) {
+        $recommendations[] = [
+            'id' => 'rec_entropy',
+            'severity' => $entropyScore < 12 ? 'HIGH' : 'MEDIUM',
+            'title' => 'Upgrade Master Password Entropy',
+            'desc' => "Current password strength is rated at {$entropyBits} bits. Expand to 14+ characters combining mixed casing, numbers, and symbols to achieve 65+ bits.",
+            'action_url' => '?tab=security#change-pwd',
+            'action_label' => 'Update Password'
+        ];
     }
 
-    // 2. Beneficiaries assigned (+25)
-    if (count($nominees) >= 1) {
-        $score += 25;
-    } else {
-        $recommendations[] = "Designate at least one trusted beneficiary to inherit your vault.";
+    // 2. Two-Factor Authentication Check (Max: 20 pts)
+    $twoFaEnabled = !empty($user['two_factor_enabled']);
+    $twoFaScore = $twoFaEnabled ? 20 : 0;
+    $score += $twoFaScore;
+    $metrics['two_factor'] = [
+        'title' => 'Two-Factor Authentication (2FA)',
+        'score' => $twoFaScore,
+        'max' => 20,
+        'enabled' => $twoFaEnabled,
+        'status' => $twoFaEnabled ? 'optimal' : 'danger',
+        'value' => $twoFaEnabled ? 'TOTP Active' : 'Not Configured',
+        'description' => 'Eliminates single point of failure using Google Authenticator, Authy, or 1Password.',
+        'action_url' => '?tab=security#totp-setup',
+        'action_label' => $twoFaEnabled ? 'Manage 2FA' : 'Activate 2FA'
+    ];
+    if (!$twoFaEnabled) {
+        $recommendations[] = [
+            'id' => 'rec_2fa',
+            'severity' => 'HIGH',
+            'title' => 'Activate Two-Factor Authentication',
+            'desc' => 'Your vault relies entirely on a single master password. Link a TOTP authenticator app and save emergency recovery codes to block unauthorized logins.',
+            'action_url' => '?tab=security#totp-setup',
+            'action_label' => 'Enable 2FA'
+        ];
     }
 
-    // 3. Vault records coverage (+25)
-    if (count($vaults) > 0) {
-        $unassigned = 0;
-        foreach ($vaults as $v) {
-            if (empty($v['assigned_nominees'])) {
-                $unassigned++;
-            }
-        }
-        $score += 25;
-        if ($unassigned > 0) {
-            $recommendations[] = "Review and map specific trustee permissions for unassigned records.";
-        }
-    } else {
-        $recommendations[] = "Add your primary passwords, financial assets, or legal wills.";
-    }
-
-    // 4. Offline Backup or Recent Check-In (+25)
-    $lastCheckIn = strtotime($user['last_check_in'] ?? '2000-01-01');
-    $daysSincePing = (time() - $lastCheckIn) / 86400;
-
-    if ($daysSincePing < 15) {
-        $score += 15;
-    } else {
-        $recommendations[] = "Your check-in heartbeat is aging. Confirm your presence with a pulse.";
-    }
-
-    if (!empty($user['last_backup_export'])) {
-        $daysSinceBackup = (time() - strtotime($user['last_backup_export'])) / 86400;
-        if ($daysSinceBackup < 45) {
-            $score += 10;
+    // 3. Beneficiary Coverage Check (Max: 20 pts)
+    $totalVaults = count($vaults);
+    $assignedCount = 0;
+    foreach ($vaults as $v) {
+        if (!empty($v['assigned_nominees'])) {
+            $assignedCount++;
         } else {
-            $recommendations[] = "Generate an updated offline JSON backup for air-gapped physical storage.";
+            $unassignedVaults[] = $v;
         }
+    }
+
+    $coverageScore = 0;
+    $coveragePercent = 0;
+    $coverageStatus = 'danger';
+    if ($totalVaults === 0) {
+        $coverageScore = 10;
+        $coveragePercent = 0;
+        $coverageStatus = 'warning';
     } else {
-        $recommendations[] = "Export your first offline vault backup archive.";
+        $coveragePercent = (int)round(($assignedCount / $totalVaults) * 100);
+        $coverageScore = (int)round(($assignedCount / $totalVaults) * 20);
+        if ($coveragePercent === 100) {
+            $coverageStatus = 'optimal';
+        } elseif ($coveragePercent >= 50) {
+            $coverageStatus = 'warning';
+        } else {
+            $coverageStatus = 'danger';
+        }
+    }
+    $score += $coverageScore;
+    $metrics['coverage'] = [
+        'title' => 'Beneficiary Coverage',
+        'score' => $coverageScore,
+        'max' => 20,
+        'percent' => $coveragePercent,
+        'status' => $coverageStatus,
+        'value' => $totalVaults > 0 ? "{$assignedCount}/{$totalVaults} assigned ({$coveragePercent}%)" : '0 records',
+        'description' => 'Verifies that every stored secret is mapped to a designated beneficiary for emergency release.',
+        'action_url' => '?tab=vault',
+        'action_label' => 'Review Assignments',
+        'unassigned_count' => count($unassignedVaults)
+    ];
+    if (count($unassignedVaults) > 0) {
+        $recommendations[] = [
+            'id' => 'rec_coverage',
+            'severity' => count($unassignedVaults) > 3 ? 'HIGH' : 'MEDIUM',
+            'title' => 'Assign Beneficiaries to Unprotected Secrets',
+            'desc' => count($unassignedVaults) . ' secret item(s) are currently unassigned to any beneficiary. In an emergency, trustees cannot claim unassigned items.',
+            'action_url' => '?tab=vault',
+            'action_label' => 'Assign Beneficiaries'
+        ];
+    } elseif ($totalVaults === 0) {
+        $recommendations[] = [
+            'id' => 'rec_empty_vault',
+            'severity' => 'LOW',
+            'title' => 'Populate Your Encrypted Vault',
+            'desc' => 'Add your critical passwords, cryptocurrency seeds, financial accounts, or legal directives to the vault.',
+            'action_url' => '?tab=vault',
+            'action_label' => 'Add Secret'
+        ];
+    }
+
+    // 4. Switch Protocol Freshness (Max: 20 pts)
+    $freqDays = intval($user['check_in_frequency_days'] ?? 30);
+    $freqScore = 10;
+    if ($freqDays <= 30) {
+        $freqScore = 10;
+    } elseif ($freqDays <= 60) {
+        $freqScore = 7;
+    } elseif ($freqDays <= 90) {
+        $freqScore = 4;
+    } else {
+        $freqScore = 1;
+    }
+
+    $lastCheckIn = strtotime($user['last_check_in'] ?? '2000-01-01');
+    $daysSincePing = max(0, round((time() - $lastCheckIn) / 86400));
+    $pingScore = 10;
+    if ($daysSincePing <= 7) {
+        $pingScore = 10;
+    } elseif ($daysSincePing <= 15) {
+        $pingScore = 7;
+    } elseif ($daysSincePing <= 30) {
+        $pingScore = 4;
+    } else {
+        $pingScore = 0;
+    }
+
+    $switchScore = $freqScore + $pingScore;
+    $score += $switchScore;
+    $switchStatus = ($switchScore >= 17) ? 'optimal' : (($switchScore >= 11) ? 'warning' : 'danger');
+    $metrics['freshness'] = [
+        'title' => 'Switch Protocol Freshness',
+        'score' => $switchScore,
+        'max' => 20,
+        'status' => $switchStatus,
+        'freq_days' => $freqDays,
+        'days_since_ping' => $daysSincePing,
+        'value' => "Interval: {$freqDays}d | Ping: {$daysSincePing}d ago",
+        'description' => 'Penalizes check-in frequencies set to excessively long intervals (>30d) and aging pulse check-ins.',
+        'action_url' => '?tab=pulse',
+        'action_label' => 'Adjust Switch Settings'
+    ];
+    if ($freqDays > 45) {
+        $recommendations[] = [
+            'id' => 'rec_switch_freq',
+            'severity' => 'MEDIUM',
+            'title' => 'Reduce Dead Man Switch Frequency',
+            'desc' => "Your check-in interval is set to {$freqDays} days. A shorter window (14 to 30 days) ensures prompt protocol execution if unexpected events occur.",
+            'action_url' => '?tab=pulse',
+            'action_label' => 'Shorten Interval'
+        ];
+    }
+    if ($daysSincePing > 14) {
+        $recommendations[] = [
+            'id' => 'rec_switch_ping',
+            'severity' => 'HIGH',
+            'title' => 'Send Fresh Pulse Check-In',
+            'desc' => "Last check-in was {$daysSincePing} days ago. Send a pulse now to confirm vitality and prevent premature grace period triggers.",
+            'action_url' => '?tab=pulse',
+            'action_label' => 'Send Pulse'
+        ];
+    }
+
+    // 5. Offline Cold Backup Check (Max: 20 pts)
+    $backupScore = 0;
+    $backupStatus = 'danger';
+    $backupValue = 'Never Exported';
+    $daysSinceBackup = null;
+    if (!empty($user['last_backup_export'])) {
+        $daysSinceBackup = max(0, round((time() - strtotime($user['last_backup_export'])) / 86400));
+        if ($daysSinceBackup <= 30) {
+            $backupScore = 20;
+            $backupStatus = 'optimal';
+            $backupValue = "{$daysSinceBackup}d ago (Fresh)";
+        } elseif ($daysSinceBackup <= 60) {
+            $backupScore = 10;
+            $backupStatus = 'warning';
+            $backupValue = "{$daysSinceBackup}d ago (Aging)";
+        } else {
+            $backupScore = 0;
+            $backupStatus = 'danger';
+            $backupValue = "{$daysSinceBackup}d ago (Stale)";
+        }
+    }
+    $score += $backupScore;
+    $metrics['backup'] = [
+        'title' => 'Offline Cold Backup',
+        'score' => $backupScore,
+        'max' => 20,
+        'status' => $backupStatus,
+        'days_ago' => $daysSinceBackup,
+        'value' => $backupValue,
+        'description' => 'Validates an encrypted offline JSON export was generated within the last 30 days for air-gapped disaster recovery.',
+        'action_url' => '?tab=backup',
+        'action_label' => 'Export Backup'
+    ];
+    if ($backupScore < 20) {
+        $recommendations[] = [
+            'id' => 'rec_backup',
+            'severity' => $backupScore === 0 ? 'HIGH' : 'MEDIUM',
+            'title' => 'Export Fresh Offline Backup',
+            'desc' => !empty($daysSinceBackup) 
+                ? "Your last offline vault backup was {$daysSinceBackup} days ago (> 30 days). Download an updated encrypted export to protect against cloud service outages."
+                : 'No offline backup has been exported yet. Generate an encrypted JSON archive for air-gapped USB or hardware security storage.',
+            'action_url' => '?tab=backup',
+            'action_label' => 'Export JSON Backup'
+        ];
+    }
+
+    // Determine Overall Rating
+    $score = min(100, max(0, $score));
+    $ratingLabel = 'CRITICAL VULNERABILITY';
+    $ratingColor = '#ef4444';
+    $ratingBadge = 'danger';
+    if ($score >= 85) {
+        $ratingLabel = 'FORTIFIED';
+        $ratingColor = '#10b981';
+        $ratingBadge = 'success';
+    } elseif ($score >= 70) {
+        $ratingLabel = 'SECURE';
+        $ratingColor = '#00f0ff';
+        $ratingBadge = 'primary';
+    } elseif ($score >= 50) {
+        $ratingLabel = 'ATTENTION NEEDED';
+        $ratingColor = '#f59e0b';
+        $ratingBadge = 'warning';
     }
 
     return [
-        'score' => min(100, $score),
+        'score' => $score,
+        'rating_label' => $ratingLabel,
+        'rating_color' => $ratingColor,
+        'rating_badge' => $ratingBadge,
+        'metrics' => $metrics,
+        'unassigned_vaults' => $unassignedVaults,
         'recommendations' => $recommendations
     ];
 }
