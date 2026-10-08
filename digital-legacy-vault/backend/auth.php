@@ -43,8 +43,9 @@ if (isset($_POST['register'])) {
     }
 
     $passHash = password_hash($password, PASSWORD_DEFAULT);
-    $stmt = $conn->prepare("INSERT INTO users (name, email, password, last_check_in, status) VALUES (?, ?, ?, NOW(), 'active')");
-    $stmt->bind_param("sss", $name, $email, $passHash);
+    $entropy = calculate_password_entropy($password);
+    $stmt = $conn->prepare("INSERT INTO users (name, email, password, password_entropy_score, last_check_in, status) VALUES (?, ?, ?, ?, NOW(), 'active')");
+    $stmt->bind_param("sssi", $name, $email, $passHash, $entropy);
 
     if ($stmt->execute()) {
         $userId = $stmt->insert_id;
@@ -83,6 +84,14 @@ if (isset($_POST['login'])) {
 
         // 2. Standard Master Password Authentication
         if (password_verify($password, $user['password'])) {
+            // Update password entropy score if empty or default
+            if (empty($user['password_entropy_score'])) {
+                $calcEntropy = calculate_password_entropy($password);
+                $upEntropyStmt = $conn->prepare("UPDATE users SET password_entropy_score = ? WHERE id = ?");
+                $upEntropyStmt->bind_param("ii", $calcEntropy, $user['id']);
+                $upEntropyStmt->execute();
+            }
+
             // Check if 2FA is active
             if (!empty($user['two_factor_enabled']) && !empty($user['two_factor_secret'])) {
                 $_SESSION['2fa_pending_uid'] = $user['id'];
@@ -215,8 +224,9 @@ if (isset($_POST['change_password'])) {
     }
 
     $hash = password_hash($new, PASSWORD_DEFAULT);
-    $up = $conn->prepare("UPDATE users SET password = ? WHERE id = ?");
-    $up->bind_param("si", $hash, $uid);
+    $entropy = calculate_password_entropy($new);
+    $up = $conn->prepare("UPDATE users SET password = ?, password_entropy_score = ? WHERE id = ?");
+    $up->bind_param("sii", $hash, $entropy, $uid);
     $up->execute();
 
     log_audit($conn, $uid, 'PASSWORD_CHANGED', "Master vault password changed successfully");

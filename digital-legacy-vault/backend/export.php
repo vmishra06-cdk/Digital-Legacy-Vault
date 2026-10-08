@@ -9,6 +9,16 @@ if (!isset($_SESSION['user_id'])) {
 
 $uid = $_SESSION['user_id'];
 
+if (isset($_GET['ping_only'])) {
+    $upExport = $conn->prepare("UPDATE users SET last_backup_export = NOW() WHERE id = ?");
+    $upExport->bind_param("i", $uid);
+    $upExport->execute();
+    log_audit($conn, $uid, 'EXPORT_DATA', "User exported zero-knowledge client vault backup");
+    header('Content-Type: application/json');
+    echo json_encode(['success' => true, 'timestamp' => date('Y-m-d H:i:s')]);
+    exit;
+}
+
 // Fetch user data
 $uStmt = $conn->prepare("SELECT name, email, created_at, last_check_in FROM users WHERE id = ?");
 $uStmt->bind_param("i", $uid);
@@ -49,6 +59,11 @@ $export = [
 ];
 
 log_audit($conn, $uid, 'EXPORT_DATA', "User exported decrypted vault backup");
+
+// Update offline backup timestamp in users table
+$upExport = $conn->prepare("UPDATE users SET last_backup_export = NOW() WHERE id = ?");
+$upExport->bind_param("i", $uid);
+$upExport->execute();
 
 header('Content-Type: application/json');
 header('Content-Disposition: attachment; filename="digital_legacy_vault_backup_' . date('Y-m-d_His') . '.json"');
