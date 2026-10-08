@@ -74,6 +74,9 @@ if (!empty($user['two_factor_recovery_codes'])) {
     }
 }
 
+// Calculate Vault Security Health Score (5 pillars)
+$vaultHealth = calculate_vault_health($user, $vaults, $nominees);
+
 $activeTab = $_GET['tab'] ?? 'vault';
 $successMsg = $_GET['success'] ?? '';
 $errorMsg = $_GET['error'] ?? '';
@@ -166,6 +169,12 @@ $warningMsg = $_GET['warning'] ?? '';
           <a href="?tab=security" class="tab-link <?php echo ($activeTab === 'security') ? 'active' : ''; ?>">
             <span>Security & 2FA</span>
           </a>
+          <a href="?tab=health" class="tab-link <?php echo ($activeTab === 'health') ? 'active' : ''; ?>">
+            <span>Health Audit</span>
+            <span class="status-badge <?php echo $vaultHealth['rating_badge']; ?>" style="padding: 1px 6px; font-size: 0.7rem; margin-top: 0;">
+              <?php echo $vaultHealth['score']; ?>%
+            </span>
+          </a>
           <a href="?tab=logs" class="tab-link <?php echo ($activeTab === 'logs') ? 'active' : ''; ?>">
             <span>Security Logs</span>
           </a>
@@ -190,6 +199,209 @@ $warningMsg = $_GET['warning'] ?? '';
         <?php if (!empty($warningMsg)): ?>
           <div class="alert alert-warning"><?php echo htmlspecialchars($warningMsg); ?></div>
         <?php endif; ?>
+
+        <!-- INTERACTIVE VAULT SECURITY HEALTH SCORE WIDGET -->
+        <div class="vault-health-widget glass-card" id="vaultHealthWidget">
+          <div class="health-widget-header">
+            <div class="health-title-group">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="<?php echo $vaultHealth['rating_color']; ?>" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+              </svg>
+              <h2>VAULT SECURITY HEALTH SCORE</h2>
+              <span class="health-rating-pill <?php echo $vaultHealth['rating_badge']; ?>">
+                <?php echo $vaultHealth['rating_label']; ?>
+              </span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <a href="?tab=health" class="cyber-btn secondary btn-xs" title="Open Deep-Dive Security Simulation and Checklist">
+                Full Audit Details &rarr;
+              </a>
+              <button type="button" class="health-toggle-btn" onclick="toggleHealthDetails()" id="toggleHealthBtn">
+                <span id="toggleHealthText">Hide Breakdown</span>
+                <svg id="toggleHealthIcon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Score Gauge & 5-Pillar Cards -->
+          <div class="health-overview-row" id="healthOverviewBody">
+            <!-- Left Circular Progress Gauge -->
+            <div class="health-gauge-box">
+              <svg class="health-ring-svg" viewBox="0 0 120 120" width="120" height="120">
+                <circle class="health-ring-bg" cx="60" cy="60" r="50" stroke="rgba(255,255,255,0.08)" stroke-width="10" fill="none" />
+                <circle class="health-ring-meter" cx="60" cy="60" r="50" stroke="<?php echo $vaultHealth['rating_color']; ?>" stroke-width="10" fill="none"
+                        stroke-linecap="round" stroke-dasharray="314.16" stroke-dashoffset="<?php echo round(314.16 * (1 - ($vaultHealth['score'] / 100)), 2); ?>" />
+                <text x="60" y="54" text-anchor="middle" dominant-baseline="central" class="health-ring-text-num" font-size="24"><?php echo $vaultHealth['score']; ?>%</text>
+                <text x="60" y="74" text-anchor="middle" dominant-baseline="central" class="health-ring-text-lbl" font-size="9" fill="var(--text-muted)">AUDIT SCORE</text>
+              </svg>
+              <span style="font-size: 0.72rem; color: var(--text-muted); margin-top: 10px; text-align: center;">
+                5-Pillar Verification
+              </span>
+            </div>
+
+            <!-- Right 5 Pillars Grid -->
+            <div class="health-pillars-grid">
+              <!-- Pillar 1: Password Entropy -->
+              <div class="health-pillar-card">
+                <div>
+                  <div class="pillar-header">
+                    <span class="pillar-title">Entropy</span>
+                    <span class="pillar-pts-badge <?php echo $vaultHealth['metrics']['entropy']['status']; ?>">
+                      <?php echo $vaultHealth['metrics']['entropy']['score']; ?>/20 PTS
+                    </span>
+                  </div>
+                  <div class="pillar-value"><?php echo $vaultHealth['metrics']['entropy']['value']; ?></div>
+                  <div class="pillar-desc"><?php echo $vaultHealth['metrics']['entropy']['description']; ?></div>
+                </div>
+                <div class="pillar-action">
+                  <a href="<?php echo $vaultHealth['metrics']['entropy']['action_url']; ?>" class="cyber-btn secondary btn-xs">
+                    <?php echo $vaultHealth['metrics']['entropy']['action_label']; ?>
+                  </a>
+                </div>
+              </div>
+
+              <!-- Pillar 2: 2FA Authentication -->
+              <div class="health-pillar-card">
+                <div>
+                  <div class="pillar-header">
+                    <span class="pillar-title">2FA Auth</span>
+                    <span class="pillar-pts-badge <?php echo $vaultHealth['metrics']['two_factor']['status']; ?>">
+                      <?php echo $vaultHealth['metrics']['two_factor']['score']; ?>/20 PTS
+                    </span>
+                  </div>
+                  <div class="pillar-value"><?php echo $vaultHealth['metrics']['two_factor']['value']; ?></div>
+                  <div class="pillar-desc"><?php echo $vaultHealth['metrics']['two_factor']['description']; ?></div>
+                </div>
+                <div class="pillar-action">
+                  <a href="<?php echo $vaultHealth['metrics']['two_factor']['action_url']; ?>" class="cyber-btn secondary btn-xs">
+                    <?php echo $vaultHealth['metrics']['two_factor']['action_label']; ?>
+                  </a>
+                </div>
+              </div>
+
+              <!-- Pillar 3: Beneficiary Coverage -->
+              <div class="health-pillar-card">
+                <div>
+                  <div class="pillar-header">
+                    <span class="pillar-title">Beneficiaries</span>
+                    <span class="pillar-pts-badge <?php echo $vaultHealth['metrics']['coverage']['status']; ?>">
+                      <?php echo $vaultHealth['metrics']['coverage']['score']; ?>/20 PTS
+                    </span>
+                  </div>
+                  <div class="pillar-value"><?php echo $vaultHealth['metrics']['coverage']['value']; ?></div>
+                  <div class="pillar-desc"><?php echo $vaultHealth['metrics']['coverage']['description']; ?></div>
+                </div>
+                <div class="pillar-action">
+                  <a href="<?php echo $vaultHealth['metrics']['coverage']['action_url']; ?>" class="cyber-btn secondary btn-xs">
+                    <?php echo $vaultHealth['metrics']['coverage']['action_label']; ?>
+                  </a>
+                </div>
+              </div>
+
+              <!-- Pillar 4: Switch Freshness -->
+              <div class="health-pillar-card">
+                <div>
+                  <div class="pillar-header">
+                    <span class="pillar-title">Switch Freshness</span>
+                    <span class="pillar-pts-badge <?php echo $vaultHealth['metrics']['freshness']['status']; ?>">
+                      <?php echo $vaultHealth['metrics']['freshness']['score']; ?>/20 PTS
+                    </span>
+                  </div>
+                  <div class="pillar-value"><?php echo $vaultHealth['metrics']['freshness']['value']; ?></div>
+                  <div class="pillar-desc"><?php echo $vaultHealth['metrics']['freshness']['description']; ?></div>
+                </div>
+                <div class="pillar-action">
+                  <a href="<?php echo $vaultHealth['metrics']['freshness']['action_url']; ?>" class="cyber-btn secondary btn-xs">
+                    <?php echo $vaultHealth['metrics']['freshness']['action_label']; ?>
+                  </a>
+                </div>
+              </div>
+
+              <!-- Pillar 5: Offline Cold Backup -->
+              <div class="health-pillar-card">
+                <div>
+                  <div class="pillar-header">
+                    <span class="pillar-title">Cold Backup</span>
+                    <span class="pillar-pts-badge <?php echo $vaultHealth['metrics']['backup']['status']; ?>">
+                      <?php echo $vaultHealth['metrics']['backup']['score']; ?>/20 PTS
+                    </span>
+                  </div>
+                  <div class="pillar-value"><?php echo $vaultHealth['metrics']['backup']['value']; ?></div>
+                  <div class="pillar-desc"><?php echo $vaultHealth['metrics']['backup']['description']; ?></div>
+                </div>
+                <div class="pillar-action">
+                  <a href="<?php echo $vaultHealth['metrics']['backup']['action_url']; ?>" class="cyber-btn secondary btn-xs">
+                    <?php echo $vaultHealth['metrics']['backup']['action_label']; ?>
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Beneficiary Coverage Gap Alert (Flags items not yet assigned) -->
+          <?php if (!empty($vaultHealth['unassigned_vaults'])): ?>
+            <div class="security-gap-alert" id="unassignedGapAlert">
+              <div class="gap-alert-header">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                  <line x1="12" y1="9" x2="12" y2="13"/>
+                  <line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+                <span>Beneficiary Coverage Gap: <?php echo count($vaultHealth['unassigned_vaults']); ?> Secret Item(s) Not Assigned to Any Trustee</span>
+              </div>
+              <p class="gap-alert-desc">
+                If emergency protocol executes, unassigned secrets remain orphaned and will not be accessible to any beneficiary. Map trustee permissions to resolve this vulnerability.
+              </p>
+              <div class="gap-items-row">
+                <?php foreach ($vaultHealth['unassigned_vaults'] as $uv): ?>
+                  <div class="gap-item-chip">
+                    <span style="font-weight: 600;"><?php echo htmlspecialchars($uv['title']); ?></span>
+                    <span class="category-badge cat-<?php echo htmlspecialchars($uv['category']); ?>" style="font-size: 0.65rem; padding: 2px 6px;">
+                      <?php echo htmlspecialchars($uv['category']); ?>
+                    </span>
+                    <button type="button" class="cyber-btn secondary btn-xs" style="padding: 2px 6px; font-size: 0.68rem;" onclick="openEditVaultModal(<?php echo htmlspecialchars(json_encode($uv)); ?>)">
+                      Assign Trustee
+                    </button>
+                  </div>
+                <?php endforeach; ?>
+              </div>
+            </div>
+          <?php endif; ?>
+
+          <!-- Actionable Recommendations List -->
+          <?php if (!empty($vaultHealth['recommendations'])): ?>
+            <div class="security-recs-container" id="healthRecommendationsContainer">
+              <div class="security-recs-header">
+                <h4>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00f0ff" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+                  </svg>
+                  Actionable Security Recommendations (<?php echo count($vaultHealth['recommendations']); ?>)
+                </h4>
+              </div>
+              <div class="recommendations-list">
+                <?php foreach ($vaultHealth['recommendations'] as $rec): ?>
+                  <div class="rec-item">
+                    <div class="rec-info">
+                      <div class="rec-title-row">
+                        <span class="rec-severity-badge <?php echo $rec['severity']; ?>">
+                          <?php echo $rec['severity']; ?>
+                        </span>
+                        <span class="rec-title"><?php echo htmlspecialchars($rec['title']); ?></span>
+                      </div>
+                      <p class="rec-desc"><?php echo htmlspecialchars($rec['desc']); ?></p>
+                    </div>
+                    <div>
+                      <a href="<?php echo htmlspecialchars($rec['action_url']); ?>" class="cyber-btn primary btn-xs" style="white-space: nowrap;">
+                        <?php echo htmlspecialchars($rec['action_label']); ?> &rarr;
+                      </a>
+                    </div>
+                  </div>
+                <?php endforeach; ?>
+              </div>
+            </div>
+          <?php endif; ?>
+        </div>
 
         <!-- TAB 1: VAULT ITEMS -->
         <div id="tab-vault" class="tab-pane <?php echo ($activeTab === 'vault') ? 'active' : ''; ?>">
@@ -743,6 +955,238 @@ $warningMsg = $_GET['warning'] ?? '';
           </div>
         </div>
 
+        <!-- TAB 6: SECURITY HEALTH AUDIT DEEP-DIVE -->
+        <div id="tab-health" class="tab-pane <?php echo ($activeTab === 'health') ? 'active' : ''; ?>">
+          <div class="section-header">
+            <div>
+              <h2>Interactive Vault Security Health Audit</h2>
+              <p style="color: var(--text-muted); font-size: 0.9rem;">Comprehensive 5-Pillar Cryptographic &amp; Protocol Verification Engine</p>
+            </div>
+            <div style="display: flex; gap: 10px;">
+              <button type="button" class="cyber-btn secondary btn-sm" onclick="window.print()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                Print Audit Report
+              </button>
+              <a href="dashboard.php" class="cyber-btn primary-glow btn-sm">
+                Refresh Live Audit
+              </a>
+            </div>
+          </div>
+
+          <!-- Top Audit Score & Status Banner -->
+          <div class="glass-card" style="padding: 24px; margin-top: 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 20px;">
+            <div style="display: flex; align-items: center; gap: 20px;">
+              <div class="health-gauge-box" style="min-width: 130px; padding: 10px;">
+                <svg class="health-ring-svg" viewBox="0 0 120 120" width="100" height="100">
+                  <circle class="health-ring-bg" cx="60" cy="60" r="50" stroke="rgba(255,255,255,0.08)" stroke-width="10" fill="none" />
+                  <circle class="health-ring-meter" cx="60" cy="60" r="50" stroke="<?php echo $vaultHealth['rating_color']; ?>" stroke-width="10" fill="none"
+                          stroke-linecap="round" stroke-dasharray="314.16" stroke-dashoffset="<?php echo round(314.16 * (1 - ($vaultHealth['score'] / 100)), 2); ?>" />
+                  <text x="60" y="54" text-anchor="middle" dominant-baseline="central" class="health-ring-text-num" font-size="22"><?php echo $vaultHealth['score']; ?>%</text>
+                  <text x="60" y="74" text-anchor="middle" dominant-baseline="central" class="health-ring-text-lbl" font-size="9" fill="var(--text-muted)">OVERALL</text>
+                </svg>
+              </div>
+              <div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <h3 style="margin: 0; font-size: 1.2rem;">System Posture: <?php echo $vaultHealth['rating_label']; ?></h3>
+                  <span class="health-rating-pill <?php echo $vaultHealth['rating_badge']; ?>">
+                    <?php echo $vaultHealth['score']; ?> / 100 POINTS
+                  </span>
+                </div>
+                <p style="color: var(--text-muted); font-size: 0.88rem; margin-top: 8px; max-width: 650px;">
+                  This health score is continuously calculated across 5 security vectors: Master password entropy (20 pts), Two-factor authentication (20 pts), Beneficiary mapping coverage (20 pts), Dead man switch heartbeat freshness (20 pts), and Offline cold backup currency (20 pts).
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Deep-Dive 5 Pillars Breakdown Table/Cards -->
+          <h3 style="margin-top: 30px; margin-bottom: 14px; font-size: 1.05rem; letter-spacing: 0.5px;">SECURITY PILLARS DEEP-DIVE</h3>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px;">
+            
+            <!-- Pillar 1 -->
+            <div class="glass-card" style="padding: 20px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h4 style="font-size: 0.95rem; margin: 0; display: flex; align-items: center; gap: 8px;">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00f0ff" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                  1. Master Password Entropy
+                </h4>
+                <span class="pillar-pts-badge <?php echo $vaultHealth['metrics']['entropy']['status']; ?>">
+                  <?php echo $vaultHealth['metrics']['entropy']['score']; ?>/20 PTS
+                </span>
+              </div>
+              <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+                Evaluated Strength: <strong style="color: var(--text-main);"><?php echo $vaultHealth['metrics']['entropy']['value']; ?></strong> (NIST SP 800-63B pool criteria).
+              </p>
+              <div style="background: rgba(0,0,0,0.3); border-radius: 8px; padding: 10px; font-size: 0.78rem; color: var(--text-muted); line-height: 1.4;">
+                A score of 65+ bits prevents offline hashcat/rainbow-table brute forcing against PBKDF2/Argon2 key derivation.
+              </div>
+              <div style="margin-top: 14px;">
+                <a href="<?php echo $vaultHealth['metrics']['entropy']['action_url']; ?>" class="cyber-btn secondary btn-xs" style="width: 100%; justify-content: center;">
+                  Update Master Password
+                </a>
+              </div>
+            </div>
+
+            <!-- Pillar 2 -->
+            <div class="glass-card" style="padding: 20px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h4 style="font-size: 0.95rem; margin: 0; display: flex; align-items: center; gap: 8px;">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00f0ff" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                  2. Two-Factor Authentication
+                </h4>
+                <span class="pillar-pts-badge <?php echo $vaultHealth['metrics']['two_factor']['status']; ?>">
+                  <?php echo $vaultHealth['metrics']['two_factor']['score']; ?>/20 PTS
+                </span>
+              </div>
+              <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+                Status: <strong style="color: var(--text-main);"><?php echo $vaultHealth['metrics']['two_factor']['value']; ?></strong> (RFC 6238 TOTP Standard).
+              </p>
+              <div style="background: rgba(0,0,0,0.3); border-radius: 8px; padding: 10px; font-size: 0.78rem; color: var(--text-muted); line-height: 1.4;">
+                Eliminates the single point of failure by requiring dynamic 6-digit rolling codes and emergency offline recovery keys.
+              </div>
+              <div style="margin-top: 14px;">
+                <a href="<?php echo $vaultHealth['metrics']['two_factor']['action_url']; ?>" class="cyber-btn secondary btn-xs" style="width: 100%; justify-content: center;">
+                  Configure 2FA Settings
+                </a>
+              </div>
+            </div>
+
+            <!-- Pillar 3 -->
+            <div class="glass-card" style="padding: 20px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h4 style="font-size: 0.95rem; margin: 0; display: flex; align-items: center; gap: 8px;">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00f0ff" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                  3. Beneficiary Mapping Coverage
+                </h4>
+                <span class="pillar-pts-badge <?php echo $vaultHealth['metrics']['coverage']['status']; ?>">
+                  <?php echo $vaultHealth['metrics']['coverage']['score']; ?>/20 PTS
+                </span>
+              </div>
+              <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+                Coverage Ratio: <strong style="color: var(--text-main);"><?php echo $vaultHealth['metrics']['coverage']['value']; ?></strong>.
+              </p>
+              <div style="background: rgba(0,0,0,0.3); border-radius: 8px; padding: 10px; font-size: 0.78rem; color: var(--text-muted); line-height: 1.4;">
+                Any secret without a designated trustee is permanently orphaned when protocol triggers. 100% assignment is required for full points.
+              </div>
+              <div style="margin-top: 14px;">
+                <a href="<?php echo $vaultHealth['metrics']['coverage']['action_url']; ?>" class="cyber-btn secondary btn-xs" style="width: 100%; justify-content: center;">
+                  Manage Secret Assignments
+                </a>
+              </div>
+            </div>
+
+            <!-- Pillar 4 -->
+            <div class="glass-card" style="padding: 20px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h4 style="font-size: 0.95rem; margin: 0; display: flex; align-items: center; gap: 8px;">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00f0ff" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                  4. Switch Protocol Freshness
+                </h4>
+                <span class="pillar-pts-badge <?php echo $vaultHealth['metrics']['freshness']['status']; ?>">
+                  <?php echo $vaultHealth['metrics']['freshness']['score']; ?>/20 PTS
+                </span>
+              </div>
+              <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+                Interval Status: <strong style="color: var(--text-main);"><?php echo $vaultHealth['metrics']['freshness']['value']; ?></strong>.
+              </p>
+              <div style="background: rgba(0,0,0,0.3); border-radius: 8px; padding: 10px; font-size: 0.78rem; color: var(--text-muted); line-height: 1.4;">
+                Penalizes check-in frequencies set to excessively long intervals (&gt;30 days) and heartbeats older than 14 days.
+              </div>
+              <div style="margin-top: 14px;">
+                <a href="<?php echo $vaultHealth['metrics']['freshness']['action_url']; ?>" class="cyber-btn secondary btn-xs" style="width: 100%; justify-content: center;">
+                  Adjust Switch Frequency
+                </a>
+              </div>
+            </div>
+
+            <!-- Pillar 5 -->
+            <div class="glass-card" style="padding: 20px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h4 style="font-size: 0.95rem; margin: 0; display: flex; align-items: center; gap: 8px;">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00f0ff" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  5. Offline Cold Backup
+                </h4>
+                <span class="pillar-pts-badge <?php echo $vaultHealth['metrics']['backup']['status']; ?>">
+                  <?php echo $vaultHealth['metrics']['backup']['score']; ?>/20 PTS
+                </span>
+              </div>
+              <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+                Backup Freshness: <strong style="color: var(--text-main);"><?php echo $vaultHealth['metrics']['backup']['value']; ?></strong>.
+              </p>
+              <div style="background: rgba(0,0,0,0.3); border-radius: 8px; padding: 10px; font-size: 0.78rem; color: var(--text-muted); line-height: 1.4;">
+                Requires an encrypted offline JSON archive generated within the last 30 days to defend against cloud outage or hardware failure.
+              </div>
+              <div style="margin-top: 14px;">
+                <a href="<?php echo $vaultHealth['metrics']['backup']['action_url']; ?>" class="cyber-btn secondary btn-xs" style="width: 100%; justify-content: center;">
+                  Generate Offline Backup
+                </a>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- INTERACTIVE "WHAT-IF" HEALTH SCORE SIMULATOR -->
+          <div class="glass-card" style="padding: 26px; margin-top: 30px; border: 1px solid rgba(0, 240, 255, 0.25);">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px; margin-bottom: 18px;">
+              <div>
+                <h3 style="font-size: 1.1rem; margin: 0; letter-spacing: 0.5px;">INTERACTIVE WHAT-IF HEALTH SIMULATOR</h3>
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 4px;">
+                  Toggle theoretical optimizations below to see real-time impact on your vault health score.
+                </p>
+              </div>
+              <div style="display: flex; align-items: center; gap: 14px; background: rgba(0,0,0,0.4); padding: 8px 16px; border-radius: 12px;">
+                <span style="font-size: 0.85rem; color: var(--text-muted);">Simulated Score:</span>
+                <span id="simulatedScoreText" style="font-size: 1.3rem; font-weight: 800; color: #10b981;"><?php echo $vaultHealth['score']; ?>%</span>
+                <span id="simulatedBadge" class="health-rating-pill <?php echo $vaultHealth['rating_badge']; ?>" style="font-size: 0.7rem; padding: 2px 8px;">
+                  <?php echo $vaultHealth['rating_label']; ?>
+                </span>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px;">
+              <label style="display: flex; align-items: center; gap: 12px; background: rgba(2, 6, 23, 0.6); padding: 12px; border-radius: 10px; cursor: pointer; border: 1px solid rgba(255,255,255,0.06);">
+                <input type="checkbox" id="sim_entropy" onchange="runHealthSimulation()" <?php echo ($vaultHealth['metrics']['entropy']['score'] >= 20) ? 'checked' : ''; ?> style="width: 18px; height: 18px; accent-color: var(--cyber-blue);">
+                <div>
+                  <div style="font-size: 0.88rem; font-weight: 600;">Upgrade Password to 65+ Bits Entropy</div>
+                  <div style="font-size: 0.75rem; color: var(--text-muted);">+<?php echo (20 - $vaultHealth['metrics']['entropy']['score']); ?> pts potential gain</div>
+                </div>
+              </label>
+
+              <label style="display: flex; align-items: center; gap: 12px; background: rgba(2, 6, 23, 0.6); padding: 12px; border-radius: 10px; cursor: pointer; border: 1px solid rgba(255,255,255,0.06);">
+                <input type="checkbox" id="sim_2fa" onchange="runHealthSimulation()" <?php echo ($vaultHealth['metrics']['two_factor']['score'] >= 20) ? 'checked' : ''; ?> style="width: 18px; height: 18px; accent-color: var(--cyber-blue);">
+                <div>
+                  <div style="font-size: 0.88rem; font-weight: 600;">Activate 2FA TOTP Hardware/App</div>
+                  <div style="font-size: 0.75rem; color: var(--text-muted);">+<?php echo (20 - $vaultHealth['metrics']['two_factor']['score']); ?> pts potential gain</div>
+                </div>
+              </label>
+
+              <label style="display: flex; align-items: center; gap: 12px; background: rgba(2, 6, 23, 0.6); padding: 12px; border-radius: 10px; cursor: pointer; border: 1px solid rgba(255,255,255,0.06);">
+                <input type="checkbox" id="sim_coverage" onchange="runHealthSimulation()" <?php echo ($vaultHealth['metrics']['coverage']['score'] >= 20) ? 'checked' : ''; ?> style="width: 18px; height: 18px; accent-color: var(--cyber-blue);">
+                <div>
+                  <div style="font-size: 0.88rem; font-weight: 600;">Assign Trustees to 100% of Records</div>
+                  <div style="font-size: 0.75rem; color: var(--text-muted);">+<?php echo (20 - $vaultHealth['metrics']['coverage']['score']); ?> pts potential gain</div>
+                </div>
+              </label>
+
+              <label style="display: flex; align-items: center; gap: 12px; background: rgba(2, 6, 23, 0.6); padding: 12px; border-radius: 10px; cursor: pointer; border: 1px solid rgba(255,255,255,0.06);">
+                <input type="checkbox" id="sim_freshness" onchange="runHealthSimulation()" <?php echo ($vaultHealth['metrics']['freshness']['score'] >= 20) ? 'checked' : ''; ?> style="width: 18px; height: 18px; accent-color: var(--cyber-blue);">
+                <div>
+                  <div style="font-size: 0.88rem; font-weight: 600;">Set Frequency &le; 30d &amp; Recent Pulse</div>
+                  <div style="font-size: 0.75rem; color: var(--text-muted);">+<?php echo (20 - $vaultHealth['metrics']['freshness']['score']); ?> pts potential gain</div>
+                </div>
+              </label>
+
+              <label style="display: flex; align-items: center; gap: 12px; background: rgba(2, 6, 23, 0.6); padding: 12px; border-radius: 10px; cursor: pointer; border: 1px solid rgba(255,255,255,0.06);">
+                <input type="checkbox" id="sim_backup" onchange="runHealthSimulation()" <?php echo ($vaultHealth['metrics']['backup']['score'] >= 20) ? 'checked' : ''; ?> style="width: 18px; height: 18px; accent-color: var(--cyber-blue);">
+                <div>
+                  <div style="font-size: 0.88rem; font-weight: 600;">Export Cold Offline Backup Today</div>
+                  <div style="font-size: 0.75rem; color: var(--text-muted);">+<?php echo (20 - $vaultHealth['metrics']['backup']['score']); ?> pts potential gain</div>
+                </div>
+              </label>
+            </div>
+          </div>
+        </div>
+
       </div>
     </main>
   </div>
@@ -1258,6 +1702,9 @@ $warningMsg = $_GET['warning'] ?? '';
       a.download = 'digital-legacy-vault-recovery-codes.txt';
       document.body.appendChild(a);
       a.click();
+      document.body.removeChild(a);
+    }
+
     // Zero-Knowledge Client-Side Decrypted JSON Export
     async function exportZeroKnowledgeJSON() {
       const key = await ensureVaultKey();
@@ -1317,7 +1764,87 @@ $warningMsg = $_GET['warning'] ?? '';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+
+      // Record offline backup timestamp on backend
+      fetch('backend/export.php?ping_only=1').catch(e => console.warn(e));
+
       showToast('Zero-Knowledge JSON archive downloaded');
+    }
+
+    // Toggle Health Widget Breakdown Details
+    function toggleHealthDetails() {
+      const body = document.getElementById('healthOverviewBody');
+      const alert = document.getElementById('unassignedGapAlert');
+      const recs = document.getElementById('healthRecommendationsContainer');
+      const icon = document.getElementById('toggleHealthIcon');
+      const text = document.getElementById('toggleHealthText');
+      if (!body) return;
+
+      const isHidden = body.style.display === 'none';
+      body.style.display = isHidden ? 'flex' : 'none';
+      if (alert) alert.style.display = isHidden ? 'block' : 'none';
+      if (recs) recs.style.display = isHidden ? 'block' : 'none';
+      text.innerText = isHidden ? 'Hide Breakdown' : 'Show Breakdown';
+      icon.innerHTML = isHidden 
+        ? '<polyline points="18 15 12 9 6 15"/>' 
+        : '<polyline points="6 9 12 15 18 9"/>';
+      localStorage.setItem('dlv_health_expanded', isHidden ? '1' : '0');
+    }
+
+    // Restore user preference
+    document.addEventListener('DOMContentLoaded', () => {
+      if (localStorage.getItem('dlv_health_expanded') === '0') {
+        toggleHealthDetails();
+      }
+    });
+
+    // What-If Health Simulator
+    function runHealthSimulation() {
+      let score = 0;
+      const simEntropy = document.getElementById('sim_entropy')?.checked;
+      score += simEntropy ? 20 : <?php echo intval($vaultHealth['metrics']['entropy']['score']); ?>;
+
+      const sim2fa = document.getElementById('sim_2fa')?.checked;
+      score += sim2fa ? 20 : <?php echo intval($vaultHealth['metrics']['two_factor']['score']); ?>;
+
+      const simCov = document.getElementById('sim_coverage')?.checked;
+      score += simCov ? 20 : <?php echo intval($vaultHealth['metrics']['coverage']['score']); ?>;
+
+      const simFresh = document.getElementById('sim_freshness')?.checked;
+      score += simFresh ? 20 : <?php echo intval($vaultHealth['metrics']['freshness']['score']); ?>;
+
+      const simBackup = document.getElementById('sim_backup')?.checked;
+      score += simBackup ? 20 : <?php echo intval($vaultHealth['metrics']['backup']['score']); ?>;
+
+      score = Math.min(100, Math.max(0, score));
+
+      let label = 'CRITICAL VULNERABILITY';
+      let badgeClass = 'danger';
+      let color = '#ef4444';
+      if (score >= 85) {
+        label = 'FORTIFIED';
+        badgeClass = 'success';
+        color = '#10b981';
+      } else if (score >= 70) {
+        label = 'SECURE';
+        badgeClass = 'primary';
+        color = '#00f0ff';
+      } else if (score >= 50) {
+        label = 'ATTENTION NEEDED';
+        badgeClass = 'warning';
+        color = '#f59e0b';
+      }
+
+      const scoreText = document.getElementById('simulatedScoreText');
+      const badge = document.getElementById('simulatedBadge');
+      if (scoreText) {
+        scoreText.innerText = score + '%';
+        scoreText.style.color = color;
+      }
+      if (badge) {
+        badge.innerText = label;
+        badge.className = 'health-rating-pill ' + badgeClass;
+      }
     }
   </script>
 </body>
