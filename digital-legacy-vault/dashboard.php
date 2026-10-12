@@ -440,17 +440,11 @@ $warningMsg = $_GET['warning'] ?? '';
               </div>
             <?php else: ?>
               <?php foreach ($vaults as $v): ?>
-                <?php 
-                  $isClient = !isset($v['is_client_encrypted']) || !empty($v['is_client_encrypted']);
-                  $serverFallback = (!$isClient) ? decrypt_vault_secret($v['secret'], $v['iv'] ?? '', $v['tag'] ?? '') : '';
-                ?>
                 <div class="vault-item-card tilt-3d" data-category="<?php echo htmlspecialchars($v['category']); ?>" data-title="<?php echo strtolower(htmlspecialchars($v['title'])); ?>" data-notes="<?php echo strtolower(htmlspecialchars(($v['notes'] ?? '') . ' ' . ($v['file_name'] ?? ''))); ?>">
                   <div class="item-top">
                     <div>
                       <span class="category-tag"><?php echo htmlspecialchars($v['category']); ?></span>
-                      <?php if ($isClient): ?>
-                        <span style="font-size: 0.7rem; color: var(--cyber-blue); border: 1px solid rgba(0, 240, 255, 0.3); padding: 2px 6px; border-radius: 4px; margin-left: 6px;">Zero-Knowledge</span>
-                      <?php endif; ?>
+                      <span style="font-size: 0.7rem; color: var(--cyber-blue); border: 1px solid rgba(0, 240, 255, 0.3); padding: 2px 6px; border-radius: 4px; margin-left: 6px;">Zero-Knowledge</span>
                       <h4 class="item-title"><?php echo htmlspecialchars($v['title']); ?></h4>
                     </div>
                     <form action="backend/vault.php" method="POST" onsubmit="return confirm('Are you sure you want to permanently delete this secret?');">
@@ -460,15 +454,13 @@ $warningMsg = $_GET['warning'] ?? '';
                     </form>
                   </div>
 
-                  <!-- Secret Box with Zero-Knowledge Client-Side Decrypt and Copy -->
+                  <!-- In-Browser Decryptor: Server serves only ciphertext and IV attributes -->
                   <div class="secret-display-box"
                        id="secret-box-<?php echo $v['id']; ?>"
                        data-vault-id="<?php echo $v['id']; ?>"
                        data-ciphertext="<?php echo htmlspecialchars($v['secret']); ?>"
                        data-iv="<?php echo htmlspecialchars($v['iv'] ?? ''); ?>"
-                       data-tag="<?php echo htmlspecialchars($v['tag'] ?? ''); ?>"
-                       data-is-client="<?php echo $isClient ? '1' : '0'; ?>"
-                       data-fallback="<?php echo htmlspecialchars(addslashes($serverFallback)); ?>">
+                       data-tag="<?php echo htmlspecialchars($v['tag'] ?? ''); ?>">
                     <div class="secret-display-text" id="secret-text-<?php echo $v['id']; ?>" data-masked="true">••••••••••••••••</div>
                     <div class="secret-actions-row">
                       <button type="button" class="cyber-btn secondary btn-sm" onclick="toggleSecret(<?php echo $v['id']; ?>)">
