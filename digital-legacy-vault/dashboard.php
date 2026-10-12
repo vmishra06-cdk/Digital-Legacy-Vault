@@ -482,7 +482,7 @@ $warningMsg = $_GET['warning'] ?? '';
                           <small style="color: var(--text-muted);">(<?php echo round($v['file_size'] / 1024, 1); ?> KB)</small>
                         <?php endif; ?>
                       </div>
-                      <button type="button" class="cyber-btn primary-glow btn-sm" onclick="downloadFile(<?php echo $v['id']; ?>, '<?php echo htmlspecialchars(addslashes($v['file_name'])); ?>', <?php echo $isClient ? 1 : 0; ?>)">
+                      <button type="button" class="cyber-btn primary-glow btn-sm" onclick="downloadFile(<?php echo $v['id']; ?>, '<?php echo htmlspecialchars(addslashes($v['file_name'])); ?>')">
                         Download
                       </button>
                     </div>
@@ -1433,32 +1433,34 @@ $warningMsg = $_GET['warning'] ?? '';
       }
     }
 
-    // Download & Decrypt File Client-Side
-    async function downloadFile(vaultId, origFileName, isClient) {
-      if (!isClient) {
-        window.location.href = `backend/download.php?id=${vaultId}`;
-        return;
-      }
-
+    // In-Browser Decryptor: Fetch encrypted blob, decrypt locally with DLVCrypto.decryptFile, and save plaintext file
+    async function downloadFile(vaultId, origFileName) {
       const key = await ensureVaultKey();
       if (!key) return;
 
-      showToast('Decrypting file locally with Web Crypto API...');
+      showToast('Fetching encrypted file attachment...');
       try {
         const resp = await fetch(`backend/download.php?id=${vaultId}`);
-        if (!resp.ok) throw new Error('Download failed');
+        if (!resp.ok) {
+          throw new Error(`Download request failed with status ${resp.status}`);
+        }
+
         const encryptedBuffer = await resp.arrayBuffer();
+        showToast('Decrypting file locally with DLVCrypto.decryptFile...');
 
         const decryptedBlob = await window.DLVCrypto.decryptFile(encryptedBuffer, key);
         const blobUrl = URL.createObjectURL(decryptedBlob);
-        const a = document.createElement('a');
-        a.href = blobUrl;
-        a.download = origFileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(blobUrl);
-        showToast('File decrypted and saved successfully');
+
+        // Save plaintext file directly to the user's downloads folder
+        const downloadLink = document.createElement('a');
+        downloadLink.href = blobUrl;
+        downloadLink.download = origFileName || 'decrypted_attachment';
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+        showToast('Plaintext file saved to downloads folder');
         window.VaultAudioInstance.download();
       } catch (err) {
         showToast('File decryption failed: ' + err.message);
