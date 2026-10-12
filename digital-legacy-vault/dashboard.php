@@ -1372,7 +1372,7 @@ $warningMsg = $_GET['warning'] ?? '';
       }
     }
 
-    // Reveal / Mask Secret with Client-Side Decryption
+    // In-Browser Decryptor: Reveal / Mask Secret with Client's In-Memory Key
     async function toggleSecret(id) {
       const elem = document.getElementById(`secret-text-${id}`);
       const btnLbl = document.getElementById(`toggle-lbl-${id}`);
@@ -1387,20 +1387,14 @@ $warningMsg = $_GET['warning'] ?? '';
         return;
       }
 
-      const isClient = box.getAttribute('data-is-client') === '1';
-      if (!isClient) {
-        // Fallback for legacy items encrypted server-side
-        const fallback = box.getAttribute('data-fallback') || '';
-        elem.innerText = fallback;
-        elem.setAttribute('data-masked', 'false');
-        btnLbl.innerText = 'Hide';
-        window.VaultAudioInstance.unlock();
-        return;
-      }
-
       const ciphertext = box.getAttribute('data-ciphertext');
       const iv = box.getAttribute('data-iv');
       const tag = box.getAttribute('data-tag');
+
+      if (!ciphertext || !iv) {
+        showToast('Decryption error: Missing ciphertext or initialization vector');
+        return;
+      }
 
       const key = await ensureVaultKey();
       if (!key) return;
@@ -1416,20 +1410,17 @@ $warningMsg = $_GET['warning'] ?? '';
       }
     }
 
-    // Copy Decrypted Secret to Clipboard
+    // In-Browser Decryptor: Copy Plaintext Directly via Client's In-Memory Key
     async function copySecret(id) {
       const box = document.getElementById(`secret-box-${id}`);
-      const isClient = box.getAttribute('data-is-client') === '1';
-
-      if (!isClient) {
-        const fallback = box.getAttribute('data-fallback') || '';
-        copyToClipboard(fallback, 'Secret copied to clipboard');
-        return;
-      }
-
       const ciphertext = box.getAttribute('data-ciphertext');
       const iv = box.getAttribute('data-iv');
       const tag = box.getAttribute('data-tag');
+
+      if (!ciphertext || !iv) {
+        showToast('Decryption error: Missing ciphertext or initialization vector');
+        return;
+      }
 
       const key = await ensureVaultKey();
       if (!key) return;
