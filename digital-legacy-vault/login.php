@@ -69,16 +69,30 @@ $success = $_GET['success'] ?? '';
   <script src="assets/js/vault3d.js"></script>
   <script>
     const form = document.getElementById('loginForm');
+    let isSubmitting = false;
+
     form.addEventListener('submit', async function(e) {
+      if (isSubmitting) return;
+
       const email = document.getElementById('loginEmail').value.trim();
       const password = document.getElementById('loginPassword').value;
+
       if (email && password && window.DLVCrypto && window.DLVCrypto.isSupported()) {
+        e.preventDefault();
+        isSubmitting = true;
+
+        const btn = document.getElementById('loginBtn');
+        btn.disabled = true;
+        btn.innerText = 'Unlocking Vault...';
+
         try {
           const key = await window.DLVCrypto.deriveKeyFromPassword(password, email);
           await window.DLVCrypto.saveKeyToSession(email, key);
         } catch (err) {
           console.warn('Client key derivation notice:', err);
         }
+
+        form.submit();
       }
     });
   </script>

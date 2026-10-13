@@ -70,6 +70,7 @@ $error = $_GET['error'] ?? '';
     </div>
   </div>
 
+  <script src="assets/js/crypto-zk.js"></script>
   <script src="assets/js/bg3d.js"></script>
   <script src="assets/js/vault3d.js"></script>
   <script>
@@ -77,6 +78,7 @@ $error = $_GET['error'] ?? '';
     const confirmPwd = document.getElementById('regConfirmPassword');
     const notice = document.getElementById('passwordMatchNotice');
     const form = document.querySelector('form');
+    let isSubmitting = false;
 
     function checkPasswordMatch() {
       if (!confirmPwd.value) {
@@ -106,18 +108,29 @@ $error = $_GET['error'] ?? '';
         confirmPwd.focus();
         return;
       }
+
+      if (isSubmitting) return;
+
       const email = document.getElementById('regEmail').value.trim();
       const password = pwd.value;
       if (email && password && window.DLVCrypto && window.DLVCrypto.isSupported()) {
+        e.preventDefault();
+        isSubmitting = true;
+
+        const submitBtn = document.getElementById('regSubmitBtn');
+        submitBtn.disabled = true;
+        submitBtn.innerText = 'Arming Vault...';
+
         try {
           const key = await window.DLVCrypto.deriveKeyFromPassword(password, email);
           await window.DLVCrypto.saveKeyToSession(email, key);
         } catch (err) {
           console.warn('Client key derivation notice:', err);
         }
+
+        form.submit();
       }
     });
   </script>
-  <script src="assets/js/crypto-zk.js"></script>
 </body>
 </html>
