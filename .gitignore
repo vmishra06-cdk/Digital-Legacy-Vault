@@ -1,9 +1,8 @@
-# Ignore uploaded user files but preserve directory
+
 digital-legacy-vault/uploads/*
 !digital-legacy-vault/uploads/.gitkeep
 !digital-legacy-vault/uploads/.htaccess
 
-# OS and system files
 .DS_Store
 Thumbs.db
 *.log
