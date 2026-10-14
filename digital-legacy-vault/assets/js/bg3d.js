@@ -128,8 +128,81 @@
   });
   const streamParticles = new THREE.Points(streamGeo, streamMat);
   infinityGroup.add(streamParticles);
-
   scene.add(infinityGroup);
+
+  // ==========================================
+  // SECOND FLOATING INFINITY SYMBOL (FULL SCREEN ROAMING)
+  // ==========================================
+  const infinityCurve2 = new InfinityCurve(210, 105, 65);
+  const infinityGroup2 = new THREE.Group();
+
+  // 1. Core Glowing Infinity Tube (Neon Violet / Purple Orchid)
+  const tubeGeo2 = new THREE.TubeGeometry(infinityCurve2, 220, 2.8, 16, true);
+  const tubeMat2 = new THREE.MeshStandardMaterial({
+    color: 0xa855f7,
+    emissive: 0x6d28d9,
+    emissiveIntensity: 0.75,
+    metalness: 0.8,
+    roughness: 0.2,
+    transparent: true,
+    opacity: 0.85
+  });
+  const tubeMesh2 = new THREE.Mesh(tubeGeo2, tubeMat2);
+  infinityGroup2.add(tubeMesh2);
+
+  // 2. Outer Holographic Hexagonal Wireframe Cage (Electric Cyan Accents)
+  const cageGeo2 = new THREE.TubeGeometry(infinityCurve2, 90, 6.4, 6, true);
+  const cageMat2 = new THREE.MeshBasicMaterial({
+    color: 0x00f0ff,
+    wireframe: true,
+    transparent: true,
+    opacity: 0.22
+  });
+  const cageMesh2 = new THREE.Mesh(cageGeo2, cageMat2);
+  infinityGroup2.add(cageMesh2);
+
+  // 3. Flowing Energy Stream Particles along Second Infinity Path
+  const streamParticleCount2 = 180;
+  const streamGeo2 = new THREE.BufferGeometry();
+  const streamPositions2 = new Float32Array(streamParticleCount2 * 3);
+  const streamColors2 = new Float32Array(streamParticleCount2 * 3);
+  const streamOffsets2 = new Float32Array(streamParticleCount2);
+
+  const stream2Color1 = new THREE.Color(0xa855f7);
+  const stream2Color2 = new THREE.Color(0xec4899);
+  const stream2Color3 = new THREE.Color(0x00f0ff);
+
+  for (let i = 0; i < streamParticleCount2; i++) {
+    streamOffsets2[i] = i / streamParticleCount2;
+    const pt = infinityCurve2.getPoint(streamOffsets2[i]);
+    streamPositions2[i * 3] = pt.x;
+    streamPositions2[i * 3 + 1] = pt.y;
+    streamPositions2[i * 3 + 2] = pt.z;
+
+    const ratio = i / streamParticleCount2;
+    const col = ratio < 0.5 
+      ? stream2Color1.clone().lerp(stream2Color2, ratio * 2) 
+      : stream2Color2.clone().lerp(stream2Color3, (ratio - 0.5) * 2);
+
+    streamColors2[i * 3] = col.r;
+    streamColors2[i * 3 + 1] = col.g;
+    streamColors2[i * 3 + 2] = col.b;
+  }
+
+  streamGeo2.setAttribute('position', new THREE.BufferAttribute(streamPositions2, 3));
+  streamGeo2.setAttribute('color', new THREE.BufferAttribute(streamColors2, 3));
+
+  const streamMat2 = new THREE.PointsMaterial({
+    size: 4.2,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.9,
+    blending: THREE.AdditiveBlending
+  });
+  const streamParticles2 = new THREE.Points(streamGeo2, streamMat2);
+  infinityGroup2.add(streamParticles2);
+
+  scene.add(infinityGroup2);
 
   // ==========================================
   // DISTANT AMBIENT STARFIELD NODES
@@ -188,6 +261,7 @@
 
   let time = 0;
   const tempVec = new THREE.Vector3();
+  const tempVec2 = new THREE.Vector3();
 
   function animate() {
     requestAnimationFrame(animate);
@@ -197,16 +271,26 @@
     mouseX += (targetMouseX - mouseX) * 0.04;
     mouseY += (targetMouseY - mouseY) * 0.04;
 
-    // 1. Floating Levitation & Hypnotic Rotation of the Infinity Symbol
+    // 1. Floating Levitation & Hypnotic Rotation of Primary Infinity Symbol
     infinityGroup.rotation.y = time * 0.25;
     infinityGroup.rotation.x = Math.sin(time * 0.4) * 0.22 + (mouseY * 0.002);
     infinityGroup.rotation.z = Math.cos(time * 0.3) * 0.15 + (mouseX * 0.002);
 
-    // Floating bobbing
+    // Floating bobbing around center
     infinityGroup.position.y = Math.sin(time * 0.8) * 16;
     infinityGroup.position.x = Math.cos(time * 0.5) * 10;
 
-    // 2. Animate Stream Particles Racing Along the Infinity Curve
+    // 2. Second Infinity Symbol - Floating Across the Whole Screen with Wide Trajectory
+    infinityGroup2.rotation.y = -time * 0.20;
+    infinityGroup2.rotation.x = Math.cos(time * 0.35) * 0.28 - (mouseY * 0.0025);
+    infinityGroup2.rotation.z = Math.sin(time * 0.45) * 0.22 - (mouseX * 0.0025);
+
+    // Wide floating path traversing across the entire viewport
+    infinityGroup2.position.x = Math.sin(time * 0.35) * 160 + Math.cos(time * 0.2) * 50;
+    infinityGroup2.position.y = Math.cos(time * 0.38) * 100 + Math.sin(time * 0.25) * 35;
+    infinityGroup2.position.z = Math.sin(time * 0.3) * 70 - 70;
+
+    // 3. Animate Stream Particles for Primary Infinity Curve
     const posAttr = streamGeo.attributes.position;
     for (let i = 0; i < streamParticleCount; i++) {
       let progress = (streamOffsets[i] + time * 0.12) % 1.0;
@@ -214,6 +298,15 @@
       posAttr.setXYZ(i, tempVec.x, tempVec.y, tempVec.z);
     }
     posAttr.needsUpdate = true;
+
+    // 4. Animate Stream Particles for Second Infinity Curve
+    const posAttr2 = streamGeo2.attributes.position;
+    for (let i = 0; i < streamParticleCount2; i++) {
+      let progress2 = (streamOffsets2[i] + time * 0.10) % 1.0;
+      infinityCurve2.getPoint(progress2, tempVec2);
+      posAttr2.setXYZ(i, tempVec2.x, tempVec2.y, tempVec2.z);
+    }
+    posAttr2.needsUpdate = true;
 
     // 3. Subtle background particles drifting
     bgParticles.rotation.y += 0.0006;
